@@ -22,6 +22,8 @@
 天枢是一个对标 Claude Code 的终端 AI Agent 框架，专注中国本土模型生态（DeepSeek / 豆包 / 智谱 / Moonshot），强调**模型自主、数据主权、决策可追溯**。
 
 ---
+<img width="1025" height="1434" alt="image" src="https://github.com/user-attachments/assets/58fc11c1-8af6-473d-bebe-1159f61bb22f" />
+
 
 ## 架构
 
