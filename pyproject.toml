@@ -1,0 +1,35 @@
+[project]
+name = "tianshu"
+version = "0.1.0"
+description = "天枢 Agent — 中国本土独立自主通用 AI Agent 框架"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "aiosqlite>=0.20.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+tui = ["prompt_toolkit>=3.0"]
+
+[project.scripts]
+tianshu = "tianshu.gateway.tui:main"
+tianshu-cli = "tianshu.main:main"
+tianshu-server = "tianshu.gateway.server:main"
+tianshu-feishu = "tianshu.gateway.feishu:main"
+tianshu-wechat = "tianshu.gateway.wechat:main"
+tianshu-qqbot  = "tianshu.gateway.qqbot:main"
+tianshu-wechat-mp = "tianshu.gateway.wechat_mp:main"
+tianshu-tui = "tianshu.gateway.tui:main"
+
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,95 @@
+# 天枢 Agent · 模型配置
+# 用户完全控制：添加/删除/修改 provider 和路由规则，框架不做任何预设。
+
+providers:
+  deepseek:
+    provider: deepseek
+    api_key: ${DEEPSEEK_API_KEY}
+    base_url: https://api.deepseek.com/v1
+    models:
+      - id: deepseek-v4-pro
+        tags: [reasoning, deep_think, long_context, coding, multilingual]
+        default: true
+        max_tokens: 1048576
+      - id: deepseek-v4-flash
+        tags: [fast, cheap, multilingual, coding]
+        max_tokens: 1048576
+      - id: deepseek-chat
+        tags: [fast, cheap, multilingual, coding]
+        max_tokens: 65536
+      - id: deepseek-reasoner
+        tags: [reasoning, deep_think, coding]
+        max_tokens: 65536
+
+  doubao:
+    provider: doubao
+    api_key: ${DOUBAO_API_KEY}
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    models:
+      - id: doubao-lite-128k
+        tags: [fast, cheap, long_context]
+        max_tokens: 131072
+      - id: doubao-pro-32k
+        tags: [reasoning, multilingual]
+        max_tokens: 32768
+
+  moonshot:
+    provider: moonshot
+    api_key: ${MOONSHOT_API_KEY}
+    base_url: https://api.moonshot.cn/v1
+    models:
+      - id: moonshot-v1-128k
+        tags: [reasoning, long_context, multilingual]
+        max_tokens: 131072
+      - id: moonshot-v1-8k
+        tags: [fast, cheap]
+        max_tokens: 8192
+
+  zhipu:
+    provider: zhipu
+    api_key: ${ZHIPU_API_KEY}
+    base_url: https://open.bigmodel.cn/api/paas/v4
+    models:
+      - id: glm-4-plus
+        tags: [reasoning, multilingual, coding]
+        max_tokens: 131072
+      - id: glm-4-flash
+        tags: [fast, cheap, multilingual]
+        max_tokens: 131072
+
+# ── 路由规则 ──
+# 格式：task_types（任务类型列表） → prefer（优先级降序的 provider/model_id）
+# 系统从 prefer 列表中选第一个可用的 provider，全部不可用则走 fallback。
+routing:
+  rules:
+    - task_types: [translation, summarization, classification, keyword_extraction, format_convert]
+      prefer:
+        - deepseek/v4-flash
+        - doubao/lite-128k
+        - zhipu/flash
+
+    - task_types: [simple_query, conversation]
+      prefer:
+        - deepseek/v4-flash
+        - deepseek/v4-pro
+        - deepseek/chat
+        - moonshot/v1-8k
+        - zhipu/flash
+
+    - task_types: [deep_analysis, reasoning, planning, architecture]
+      prefer:
+        - deepseek/v4-pro
+        - deepseek/reasoner
+        - deepseek/chat
+        - moonshot/v1-128k
+        - glm/plus
+
+    - task_types: [code_generation, review, debugging]
+      prefer:
+        - deepseek/v4-pro
+        - deepseek/v4-flash
+        - deepseek/chat
+        - zhipu/plus
+        - moonshot/v1-128k
+
+  fallback: deepseek/chat

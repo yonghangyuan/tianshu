@@ -1,0 +1,30 @@
+# ── 运行时产物 ──
+*.db
+*.db-journal
+*.db-wal
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# ── 用户数据（项目根目录）──
+/memory/
+/skills/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── 临时文件 ──
+*.tmp
+*.log
+_test_*
