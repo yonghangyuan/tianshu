@@ -127,7 +127,7 @@ class SkillLoader:
         # 延迟导入避免循环
         from . import paper_radar, trend_track, code_assist
         from . import web_search, translate, schedule, shell, image_gen
-        from . import file_ops
+        from . import file_ops, browser
 
         builtins: list[BaseSkill] = [
             paper_radar.PaperRadarSkill(),
@@ -139,6 +139,7 @@ class SkillLoader:
             shell.ShellSkill(),
             image_gen.ImageGenSkill(),
             file_ops.FileOpsSkill(),
+            browser.BrowserSkill(),
         ]
 
         for skill in builtins:

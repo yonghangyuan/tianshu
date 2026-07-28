@@ -723,12 +723,12 @@ class AgentCore:
         SAFE_TOOLS = {
             "remember_fact", "recall_memory", "get_model_status",
             "web_search", "search_papers",
-            "list_dir", "read_file",
+            "list_dir", "read_file", "browse",
         }
         # 写入工具
         WRITE_TOOLS = {
             "shell_exec", "download_pdf", "write_paper_notes",
-            "write_file",
+            "write_file", "download", "upload",
         }
 
         if name in SAFE_TOOLS:
