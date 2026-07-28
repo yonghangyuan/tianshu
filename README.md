@@ -1,11 +1,14 @@
 # 天枢 Tianshu
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo.svg">
-    <img src="assets/logo.svg" alt="天枢 Tianshu" width="600">
-  </picture>
-</p>
+```
+  ████████╗ ██╗ █████╗ ███╗  ██╗  ███████╗██╗  ██╗██╗  ██╗
+  ╚══██╔══╝██╔╝██╔══██╗████╗ ██║  ██╔════╝██║  ██║██║  ██║
+     ██║  ██║ ███████║██╔██╗██║  ███████╗███████║██║  ██║
+     ██║  ██║ ██╔══██║██║╚████║  ╚════██║██╔══██║██║  ██║
+     ██║  ██║ ██║  ██║██║ ╚███║  ███████║██║  ██║╚██████╔╝
+     ╚═╝  ╚═╝ ╚═╝  ╚═╝╚═╝  ╚══╝  ╚══════╝╚═╝  ╚═╝ ╚═════╝
+```
+> 北斗七星第一星 · 主司枢纽与导向 · 中国本土自主 AI Agent 框架
 
 [![Test](https://github.com/yonghangyuan/tianshu/actions/workflows/test.yml/badge.svg)](https://github.com/yonghangyuan/tianshu/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://python.org)
