@@ -14,6 +14,7 @@ class SkillTool:
     description: str
     parameters: dict[str, Any]  # JSON Schema
     handler: Callable[..., Any]  # 同步或异步执行函数
+    permission_level: int = 0  # PermissionLevel: 0=SAFE, 1=READ, 2=WRITE, 3=DANGER
 
     def to_openai_schema(self) -> dict[str, Any]:
         """转为 OpenAI function calling 格式。"""

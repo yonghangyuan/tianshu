@@ -61,6 +61,8 @@ def create_input_handler(
         )
     except ImportError:
         pass
+    except Exception:
+        pass  # prompt_toolkit 其他异常（Git Bash NoConsoleScreenBufferError 等）
 
     return FallbackHandler(history=history or [])
 
