@@ -2,9 +2,10 @@
 
 > 北斗七星第一星 · 主司枢纽与导向 · 中国本土自主 AI Agent 框架
 
+[![Test](https://github.com/yonghangyuan/tianshu/actions/workflows/test.yml/badge.svg)](https://github.com/yonghangyuan/tianshu/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://python.org)
-[![Tests](https://img.shields.io/badge/tests-53%20passed-green)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Status](https://img.shields.io/badge/status-active-brightgreen)]()
 
 天枢是一个对标 Claude Code 的终端 AI Agent 框架，专注中国本土模型生态（DeepSeek / 豆包 / 智谱 / Moonshot），强调**模型自主、数据主权、决策可追溯**。
 
