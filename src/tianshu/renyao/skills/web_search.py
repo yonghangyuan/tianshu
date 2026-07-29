@@ -37,8 +37,13 @@ class WebSearchSkill(BaseSkill):
         )]
 
     async def _search(self, query: str, count: int = 5) -> str:
-        # 依次尝试多个搜索引擎
-        for engine in (self._search_bing, self._search_baidu):
+        # 依次尝试：必应中国 → 搜狗 → 必应国际 → 百度
+        for engine in (
+            self._search_cn_bing,
+            self._search_sogou,
+            self._search_bing,
+            self._search_baidu,
+        ):
             try:
                 result = await engine(query, count)
                 if result and len(result) > 50:
@@ -50,12 +55,52 @@ class WebSearchSkill(BaseSkill):
         q = urllib.parse.quote(query)
         return (
             f"⚠️ 搜索引擎暂时无法访问。请手动搜索：\n"
-            f"  Bing:  https://www.bing.com/search?q={q}\n"
-            f"  百度:  https://www.baidu.com/s?wd={q}\n"
-            f"  Google: https://www.google.com/search?q={q}"
+            f"  必应:  https://cn.bing.com/search?q={q}\n"
+            f"  搜狗:  https://www.sogou.com/web?query={q}\n"
+            f"  百度:  https://www.baidu.com/s?wd={q}"
         )
 
-    # ── Bing ────────────────────────────────────────────────────────
+    # ── 必应中国 (cn.bing.com) ────────────────────────────────────
+
+    async def _search_cn_bing(self, query: str, count: int) -> str:
+        url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}&count={count}"
+        html = await self._fetch(url)
+        if not html:
+            return ""
+
+        results = _parse_bing_results(html, count)
+        if not results:
+            return ""
+
+        lines = [f"🔍 必应: {query}\n"]
+        for i, r in enumerate(results):
+            lines.append(f"[{i + 1}] {r['title']}")
+            lines.append(f"    {r['snippet'][:200]}")
+            lines.append(f"    {r['url']}")
+            lines.append("")
+        return "\n".join(lines)
+
+    # ── 搜狗 ──────────────────────────────────────────────────────
+
+    async def _search_sogou(self, query: str, count: int) -> str:
+        url = f"https://www.sogou.com/web?query={urllib.parse.quote(query)}"
+        html = await self._fetch(url)
+        if not html:
+            return ""
+
+        results = _parse_sogou_results(html, count)
+        if not results:
+            return ""
+
+        lines = [f"🔍 搜狗: {query}\n"]
+        for i, r in enumerate(results):
+            lines.append(f"[{i + 1}] {r['title']}")
+            lines.append(f"    {r['snippet'][:200]}")
+            lines.append(f"    {r['url']}")
+            lines.append("")
+        return "\n".join(lines)
+
+    # ── Bing 国际版 ──────────────────────────────────────────────
 
     async def _search_bing(self, query: str, count: int) -> str:
         url = f"https://www.bing.com/search?q={urllib.parse.quote(query)}&count={count}"
@@ -174,6 +219,34 @@ def _parse_baidu_results(html: str, count: int) -> list[dict]:
         snippet_match = re.search(
             r'<(?:span|div)[^>]*class="[^"]*(?:content-right|c-abstract|article)[^"]*"[^>]*>(.*?)</(?:span|div)>',
             block, re.DOTALL
+        )
+        snippet = _clean(snippet_match.group(1)[:300]) if snippet_match else ""
+        results.append({"title": title, "snippet": snippet, "url": url})
+    return results
+
+
+def _parse_sogou_results(html: str, count: int) -> list[dict]:
+    """解析搜狗搜索结果页。"""
+    results = []
+    # 搜狗结果在 class="rb" 或 class="vrwrap" 的 div 中
+    blocks = re.findall(
+        r'<div[^>]*class="[^"]*(?:rb|vrwrap)[^"]*"[^>]*>(.*?)</div>\s*</div>',
+        html, re.DOTALL,
+    )
+    for block in blocks[:count]:
+        # 搜狗链接格式: <a href="..." target="_blank">...
+        title_match = re.search(
+            r'<a[^>]+href="([^"]+)"[^>]*>(.+?)</a>',
+            block, re.DOTALL,
+        )
+        if not title_match:
+            continue
+        url = title_match.group(1)
+        title = _clean(title_match.group(2))
+        # snippet
+        snippet_match = re.search(
+            r'<p[^>]*class="[^"]*(?:star-wiki|str-text|space-txt)[^"]*"[^>]*>(.*?)</p>',
+            block, re.DOTALL,
         )
         snippet = _clean(snippet_match.group(1)[:300]) if snippet_match else ""
         results.append({"title": title, "snippet": snippet, "url": url})
