@@ -104,38 +104,181 @@ class BrowserSkill(BaseSkill):
 
                 html = resp.text
 
-        except httpx.HTTPStatusError as e:
-            return f"❌ HTTP {e.response.status_code}: {url}"
-        except httpx.TimeoutException:
-            return f"❌ 超时: {url} (20s)"
-        except Exception as e:
-            return f"❌ 无法访问: {url}\n{type(e).__name__}: {e}"
+        except (httpx.HTTPStatusError, httpx.TimeoutException, Exception) as e:
+            # HTTP 错误/超时 → 尝试 Edge CDP（有些网站反爬但 Edge 能打开）
+            rendered_text, rendered_title = await BrowserSkill._try_edge_render(url)
+            if rendered_text:
+                return _fmt_browse_result(
+                    rendered_title or url, url, rendered_text, [], max_chars,
+                )
+            if isinstance(e, httpx.HTTPStatusError):
+                return f"❌ HTTP {e.response.status_code}: {url}"
+            elif isinstance(e, httpx.TimeoutException):
+                return f"❌ 超时: {url} (20s)"
+            else:
+                return f"❌ 无法访问: {url}\n{type(e).__name__}: {e}"
 
         # 提取信息
         title = _extract_title(html)
         text = _extract_text(html)
         links = _extract_links(html, url)
 
-        # 截断
-        text_display = text[:max_chars]
-        truncated = len(text) > max_chars
+        # ── 智能回退：文本太短（JS 渲染页面）→ Edge CDP → Playwright ──
+        pw_used = False
+        if len(text) < 200:
+            # 优先：本地 Edge CDP（零下载）
+            rendered_text, rendered_title = await self._try_edge_render(url)
+            # 备选：Playwright（如果装了）
+            if not rendered_text:
+                rendered_text, rendered_title = await self._try_playwright_render(url)
+            if rendered_text and len(rendered_text) > len(text):
+                text = rendered_text
+                title = rendered_title or title
+                pw_used = True
 
-        result = f"🌐 {title or '(无标题)'}\n"
-        result += f"📍 {resp.url}\n"
-        result += f"📊 {len(text)} 字符 | {len(links)} 个链接\n"
-        result += f"{'─' * 60}\n"
-        result += text_display
+        return _fmt_browse_result(title, resp.url, text, links, max_chars)
 
-        if truncated:
-            result += f"\n{'─' * 60}\n… 省略了 {len(text) - max_chars} 字符"
+    # ── Edge CDP 渲染（独立自主，零外部下载）─────────────────
 
-        # 链接列表
-        if links:
-            result += f"\n{'─' * 60}\n🔗 链接 (前 20):\n"
-            for i, (label, href) in enumerate(links[:20]):
-                result += f"  [{i + 1}] {label[:60]}\n     {href}\n"
+    # Edge 调试端口（避免冲突）
+    _EDGE_PORT = 9223
 
-        return result
+    @staticmethod
+    async def _try_edge_render(url: str) -> tuple[str, str]:
+        """用本地 Edge 浏览器渲染 JS 页面，返回 (文本, 标题)。
+
+        通过 CDP (Chrome DevTools Protocol) 连接 Windows 自带 Edge。
+        零外部下载。需要: pip install websockets
+        """
+        try:
+            import websockets
+        except ImportError:
+            return "", ""
+
+        try:
+            import json as _json, subprocess, asyncio, platform, os
+
+            if platform.system() != "Windows":
+                return "", ""
+
+            port = BrowserSkill._EDGE_PORT
+
+            # 1. 启动或连接 Edge 调试端口
+            try:
+                async with httpx.AsyncClient(timeout=3) as client:
+                    await client.get(f"http://127.0.0.1:{port}/json/version")
+            except Exception:
+                edge_paths = [
+                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                ]
+                edge_exe = ""
+                for ep in edge_paths:
+                    if os.path.exists(ep):
+                        edge_exe = ep
+                        break
+                if not edge_exe:
+                    return "", ""
+
+                subprocess.Popen(
+                    [edge_exe,
+                     f"--remote-debugging-port={port}",
+                     "--headless=new", "--no-first-run", "--disable-gpu",
+                     f"--user-data-dir={os.environ.get('TEMP', '/tmp')}/tianshu_edge"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                await asyncio.sleep(2)
+
+            # 2. 获取 browser WebSocket
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"http://127.0.0.1:{port}/json/version")
+                ws_url = resp.json()["webSocketDebuggerUrl"]
+
+            # 3. CDP: 创建 tab → 导航 → 提取文字
+            async with websockets.connect(ws_url, max_size=10 * 1024 * 1024) as ws:
+                recv_queue: asyncio.Queue = asyncio.Queue()
+
+                async def _recv_loop():
+                    async for raw in ws:
+                        await recv_queue.put(_json.loads(raw))
+
+                recv_task = asyncio.ensure_future(_recv_loop())
+
+                async def _cmd(method: str, params: dict | None = None,
+                               sid: str = ""):
+                    msg: dict = {"id": 1, "method": method, "params": params or {}}
+                    if sid:
+                        msg["sessionId"] = sid
+                    await ws.send(_json.dumps(msg))
+                    # 收集响应（跳过事件）
+                    while True:
+                        data = await asyncio.wait_for(recv_queue.get(), timeout=15)
+                        if data.get("id") == 1:
+                            return data.get("result", {})
+
+                # 创建新 tab + 获取 sessionId
+                result = await _cmd("Target.createTarget", {"url": "about:blank"})
+                target_id = result.get("targetId", "")
+                if not target_id:
+                    recv_task.cancel()
+                    return "", ""
+
+                result = await _cmd("Target.attachToTarget",
+                                    {"targetId": target_id, "flatten": True})
+                session_id = result.get("sessionId", "")
+
+                # 导航
+                await _cmd("Page.enable", sid=session_id)
+                await _cmd("Page.navigate", {"url": url}, sid=session_id)
+                await asyncio.sleep(2)
+
+                # 提取标题 + 文本
+                r = await _cmd("Runtime.evaluate",
+                               {"expression": "document.title",
+                                "returnByValue": True}, sid=session_id)
+                title = r.get("result", {}).get("value", "")
+
+                r = await _cmd("Runtime.evaluate",
+                               {"expression": "document.body ? document.body.innerText : ''",
+                                "returnByValue": True}, sid=session_id)
+                text = r.get("result", {}).get("value", "") or ""
+
+                # 清理：关闭 target
+                await _cmd("Target.closeTarget", {"targetId": target_id})
+                recv_task.cancel()
+
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            return "\n".join(lines), title
+
+        except Exception:
+            return "", ""
+
+    # ── Playwright 回退（如果装了 Playwright 则优先用）─────────
+
+    @staticmethod
+    async def _try_playwright_render(url: str) -> tuple[str, str]:
+        """Playwright 回退——如果装了则用。"""
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return "", ""
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-gpu"],
+                )
+                page = await browser.new_page()
+                await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(1000)
+                title = await page.title()
+                text = await page.inner_text("body")
+                await browser.close()
+                lines = [l.strip() for l in text.split("\n") if l.strip()]
+                return "\n".join(lines), title
+        except Exception:
+            return "", ""
 
     # ── Download ────────────────────────────────────────────────────
 
@@ -220,6 +363,30 @@ class BrowserSkill(BaseSkill):
             )
         except Exception as e:
             return f"❌ 上传失败: {type(e).__name__}: {e}"
+
+
+def _fmt_browse_result(
+    title: str, url: str, text: str, links: list, max_chars: int,
+) -> str:
+    """格式化浏览结果。"""
+    text_display = text[:max_chars]
+    truncated = len(text) > max_chars
+
+    result = f"🌐 {title or '(无标题)'}\n"
+    result += f"📍 {url}\n"
+    result += f"📊 {len(text)} 字符 | {len(links)} 个链接\n"
+    result += f"{'─' * 60}\n"
+    result += text_display
+
+    if truncated:
+        result += f"\n{'─' * 60}\n… 省略了 {len(text) - max_chars} 字符"
+
+    if links:
+        result += f"\n{'─' * 60}\n🔗 链接 (前 20):\n"
+        for i, (label, href) in enumerate(links[:20]):
+            result += f"  [{i + 1}] {label[:60]}\n     {href}\n"
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
