@@ -483,6 +483,9 @@ def _main_sync() -> None:
             _rich_console.clear()
             continue
 
+        # ── @file 文件引用解析 ──
+        resolved_input = _resolve_at_refs(user_input)
+
         # ── 对话（每次独立 asyncio.run）──
         from tianshu.sdk.models import AgentRequest, ToolCallConfirm
         from tianshu.gateway.cli import _handle_confirm
@@ -490,12 +493,14 @@ def _main_sync() -> None:
         _rich_console.print(
             f"[bold #60a5fa]▸[/bold #60a5fa] {user_input}"
         )
+        if resolved_input != user_input:
+            _rich_console.print("  [dim]已读取 @ 引用的文件[/dim]")
         _rich_console.print()
         renderer.reset()
 
         async def _run_turn():
             async for event in core.run_stream(
-                AgentRequest(input=user_input, task_type="conversation"),
+                AgentRequest(input=resolved_input, task_type="conversation"),
                 ctx=ctx,
             ):
                 if isinstance(event, ToolCallConfirm):
@@ -512,6 +517,94 @@ def _main_sync() -> None:
         session_store.save(ctx, title=user_input[:50])
 
     _rich_console.print("[dim]天枢已关闭[/dim]")
+
+
+def _resolve_at_refs(user_input: str) -> str:
+    """解析输入中的 @file.py 引用，读取文件内容注入上下文。
+
+    支持格式:
+      @file.py           → 读取整个文件
+      @file.py:42        → 读取第 42 行周围 20 行
+      @file.py:10-50     → 读取第 10-50 行
+      @dir/              → 列出目录内容
+    """
+    import re
+    from pathlib import Path
+
+    pattern = re.compile(r"@([^\s]+)")
+    matches = pattern.findall(user_input)
+    if not matches:
+        return user_input
+
+    resolved = user_input
+    added_contexts: list[str] = []
+
+    for ref in matches:
+        # 解析路径和行号
+        line_spec = ""
+        if ":" in ref:
+            path_str, line_spec = ref.rsplit(":", 1)
+        else:
+            path_str = ref
+
+        p = Path(path_str).expanduser()
+        if not p.is_absolute():
+            p = Path.cwd() / p
+
+        try:
+            if not p.exists():
+                continue
+
+            if p.is_dir():
+                # 目录：列出内容
+                entries = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))[:30]
+                content = f"📂 {p}\n" + "\n".join(
+                    f"  {'📁' if e.is_dir() else '📄'} {e.name}"
+                    for e in entries
+                )
+            else:
+                # 文件：读取内容
+                text = p.read_text(encoding="utf-8", errors="replace")
+                lines = text.splitlines()
+
+                if line_spec:
+                    # 解析行号范围
+                    if "-" in line_spec:
+                        parts = line_spec.split("-")
+                        start = int(parts[0]) if parts[0] else 1
+                        end = int(parts[1]) if len(parts) > 1 and parts[1] else start + 20
+                    else:
+                        n = int(line_spec)
+                        start = max(1, n - 10)
+                        end = min(len(lines), n + 10)
+
+                    start = max(1, start)
+                    end = min(len(lines), end)
+                    selected = lines[start - 1:end]
+                    content = "\n".join(
+                        f"{i:4d} │ {line}"
+                        for i, line in enumerate(selected, start=start)
+                    )
+                    header = f"📄 {p.name}:L{start}-L{end}"
+                else:
+                    content = text
+                    header = f"📄 {p.name} ({len(lines)} 行)"
+
+                content = f"{header}\n{'─' * 50}\n{content}"
+
+            added_contexts.append(content)
+        except Exception:
+            continue
+
+    if not added_contexts:
+        return user_input
+
+    context_block = "\n\n".join(added_contexts)
+    return (
+        f"{user_input}\n\n"
+        f"[以下是从 @ 引用中读取的文件内容]\n"
+        f"{context_block}"
+    )
 
 
 def _init_globals() -> None:
