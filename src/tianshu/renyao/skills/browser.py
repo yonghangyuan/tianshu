@@ -152,7 +152,18 @@ class BrowserSkill(BaseSkill):
         dest = Path(path).expanduser().resolve()
 
         try:
-            async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+            # 构造 Referer：从 URL 提取域名
+            parsed = urllib.parse.urlparse(url)
+            referer = f"{parsed.scheme}://{parsed.netloc}/"
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 TianshuBrowser/0.2"
+                ),
+                "Referer": referer,
+                "Accept": "*/*",
+            }
+            async with httpx.AsyncClient(timeout=120, follow_redirects=True, headers=headers) as client:
                 async with client.stream("GET", url) as resp:
                     resp.raise_for_status()
                     total = int(resp.headers.get("content-length", 0))
