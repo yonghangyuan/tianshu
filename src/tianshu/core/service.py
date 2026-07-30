@@ -71,7 +71,7 @@ def _classify_error(error: Exception, provider_name: str, model_id: str) -> str:
     if "overload" in msg.lower() or "503" in msg or "unavailable" in msg.lower():
         return (
             f"🏗️ 模型繁忙 ({model_ref})\n"
-            f"   服务器过载，稍后自动重试。或换用其他模型: /model list"
+            f"   服务器过载，稍后自动重试。"
         )
     # 未知错误
     return f"❌ {model_ref}: {msg[:300]}"
@@ -212,10 +212,26 @@ class AgentCore:
 
         _s_route(f"{provider.provider_name}/{model_id}", int((time.time()-t0)*1000))
 
-        # 3. 构建消息（含上下文压缩）
+        # 3. 检测"继续"——增强上下文
+        user_input = request.input
+        if user_input.strip() in ("继续", "continue", "接着", "go on"):
+            # 找到上次工具调用的占位消息，替换为有效提示
+            for i in range(len(ctx.messages) - 1, -1, -1):
+                m = ctx.messages[i]
+                if m.get("role") == "assistant" and "输入'继续'" in str(m.get("content", "")):
+                    ctx.messages[i] = {
+                        "role": "user",
+                        "content": (
+                            "请基于上述工具调用的结果，用中文给出完整回答。"
+                            "总结你找到了什么信息，并回答用户最初的问题。"
+                        ),
+                    }
+                    break
+
+        # 4. 构建消息（含上下文压缩）
         provider_info = f"{provider.provider_name}/{model_id}"
         messages = await self._build_messages(
-            request.input, ctx, level, provider_info, provider
+            user_input, ctx, level, provider_info, provider
         )
 
         # 4. ReAct 循环
@@ -697,10 +713,22 @@ class AgentCore:
                 session_id=ctx.session_id,
             )
 
-        # 7. 更新上下文
+        # 7. 更新上下文——保留工具调用历史让"继续"能用
         ctx.messages.append({"role": "user", "content": request.input})
+        # 把 ReAct 循环产生的 assistant+tool 消息写入 ctx
+        offset = (1 if self._system_prompt else 0) + len(ctx.messages) - 1
+        for m in messages[offset:]:
+            ctx.messages.append(m)
         if final_content:
             ctx.messages.append({"role": "assistant", "content": final_content})
+        elif tool_count > 0:
+            ctx.messages.append({
+                "role": "assistant",
+                "content": (
+                    f"[已通过 {tool_count} 次工具调用收集信息。"
+                    f"输入'继续'让我基于已有结果给出答案。]"
+                ),
+            })
 
         elapsed = int((time.time() - t0) * 1000)
         _s_done(decision_id, f"{provider.provider_name}/{model_id}", tool_count, elapsed)
