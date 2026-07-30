@@ -41,6 +41,7 @@ class TrendTrackSkill(BaseSkill):
                     "required": ["title", "content"],
                 },
                 handler=self._save_report,
+                permission_level=2,  # WRITE
             ),
             SkillTool(
                 name="get_weekly_summary",

@@ -33,6 +33,7 @@ class CodeAssistSkill(BaseSkill):
                     "required": ["path", "content"],
                 },
                 handler=self._write_file,
+                permission_level=2,  # WRITE
             ),
             SkillTool(
                 name="write_docx",
@@ -47,6 +48,7 @@ class CodeAssistSkill(BaseSkill):
                     "required": ["path", "title", "content"],
                 },
                 handler=self._write_docx,
+                permission_level=2,  # WRITE
             ),
             SkillTool(
                 name="list_project",

@@ -32,6 +32,7 @@ class ScheduleSkill(BaseSkill):
                     "required": ["title", "time"],
                 },
                 handler=self._add,
+                permission_level=2,  # WRITE
             ),
             SkillTool(
                 name="schedule_list",
@@ -54,6 +55,7 @@ class ScheduleSkill(BaseSkill):
                     "required": ["title"],
                 },
                 handler=self._remove,
+                permission_level=2,  # WRITE
             ),
         ]
 

@@ -50,6 +50,7 @@ class PaperRadarSkill(BaseSkill):
                     "required": ["arxiv_id"],
                 },
                 handler=self._download,
+                permission_level=2,  # WRITE
             ),
             SkillTool(
                 name="write_paper_notes",
@@ -68,6 +69,7 @@ class PaperRadarSkill(BaseSkill):
                     "required": ["title", "arxiv_id", "authors", "year", "abstract", "notes"],
                 },
                 handler=self._write_notes,
+                permission_level=2,  # WRITE
             ),
         ]
 
