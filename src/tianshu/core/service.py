@@ -383,14 +383,27 @@ class AgentCore:
         _last_tool_signatures: list[str] = []
 
         for _round in range(10):  # MAX_TOOL_ROUNDS
+            # 最后一轮：强制总结，不准再调工具
+            is_final_round = (_round == 9)
+            if is_final_round:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "已达到最大工具调用轮次。请基于已有信息给出最终回答，"
+                        "不要再调用任何工具。用中文回复。"
+                    ),
+                })
+
             round_content = ""
             round_tool_calls: list[dict[str, Any]] = []
             round_reasoning = ""
 
             try:
+                # 最后一轮不传 tools，强制纯文本回复
+                tools_for_round = None if is_final_round else self._get_tools()
                 stream = provider.chat_stream(
                     messages=messages,
-                    tools=self._get_tools(),
+                    tools=tools_for_round,
                 )
                 async for chunk in stream:
                     # 推理内容
