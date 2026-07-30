@@ -73,8 +73,14 @@ def _classify_error(error: Exception, provider_name: str, model_id: str) -> str:
             f"🏗️ 模型繁忙 ({model_ref})\n"
             f"   服务器过载，稍后自动重试。"
         )
-    # 未知错误（含空白消息兜底）
-    detail = msg[:300] if msg.strip() else "(无详细错误信息)"
+    # 未知错误（含空白消息兜底——至少显示异常类型）
+    if msg.strip():
+        detail = msg[:300]
+    else:
+        detail = f"{type(error).__name__}"
+        # httpx 异常额外提取状态码
+        if hasattr(error, 'response') and hasattr(error.response, 'status_code'):
+            detail += f"(HTTP {error.response.status_code})"
     return f"❌ {model_ref}: {detail}"
 
 
@@ -489,7 +495,7 @@ class AgentCore:
                     )
                     messages.append({"role": "user", "content": plan_context})
             except Exception as e:
-                yield ContentDelta(text=f"\n[Plan generation failed: {e}]\n")
+                yield ContentDelta(text=f"\n[Plan generation failed: {type(e).__name__}, continuing without plan]\n")
 
         # 4. ReAct 循环（流式版本）—— Token 预算驱动
         tool_results: list[dict[str, Any]] = []
