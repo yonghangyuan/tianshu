@@ -469,6 +469,28 @@ class AgentCore:
             request.input, ctx, level, provider_info, provider
         )
 
+        # 3.5 Plan Mode: 生成执行计划
+        _plan = None
+        if self._mode == "plan" and self._policy_engine:
+            from .planner import build_planner_prompt, parse_plan_from_json, format_plan_ascii
+            try:
+                plan_resp = await provider.chat(
+                    messages=[{"role": "user", "content": build_planner_prompt(request.input)}],
+                    max_tokens=1000, temperature=0.3,
+                )
+                _plan = parse_plan_from_json(plan_resp.content or "")
+                if _plan and _plan.steps:
+                    yield ContentDelta(text=f"\n{format_plan_ascii(_plan)}\n")
+                    # 将计划注入上下文
+                    plan_context = (
+                        f"[执行计划]\n目标: {_plan.goal}\n"
+                        + "\n".join(f"  Step {s.id}: {s.goal}" for s in _plan.steps)
+                        + "\n请按步骤执行。每完成一步，告知进度。"
+                    )
+                    messages.append({"role": "user", "content": plan_context})
+            except Exception:
+                pass  # 计划生成失败，继续正常 ReAct
+
         # 4. ReAct 循环（流式版本）—— Token 预算驱动
         tool_results: list[dict[str, Any]] = []
         reasoning: list[str] = []
