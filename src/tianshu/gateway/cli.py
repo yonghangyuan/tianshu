@@ -96,6 +96,17 @@ class StreamRenderer:
             return True
 
         elif isinstance(event, ToolCallStart):
+            # 工具调用前，flush 所有未渲染的内容（防止被截断）
+            full = "".join(self._content_buf)
+            if self._flushed_len < len(full):
+                remaining = full[self._flushed_len:].strip()
+                if remaining:
+                    try:
+                        console.print(Markdown(remaining, code_theme="one-dark"))
+                    except Exception:
+                        console.print(remaining)
+                self._flushed_len = len(full)
+
             self._tool_count += 1
             self._tool_phase = True
             args_summary = _format_tool_args(event.tool_name, event.tool_args)

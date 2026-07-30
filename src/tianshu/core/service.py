@@ -379,6 +379,8 @@ class AgentCore:
         total_prompt_tokens = 0
         total_completion_tokens = 0
         tool_count = 0
+        # 重复调用检测：同一工具同一参数连续 2 次 → 停止并警告 LLM
+        _last_tool_signatures: list[str] = []
 
         for _round in range(10):  # MAX_TOOL_ROUNDS
             round_content = ""
@@ -451,6 +453,27 @@ class AgentCore:
             for tc in parsed_tool_calls:
                 name = tc["name"]
                 args = tc["arguments"]
+
+                # ── 重复调用检测 ──
+                import hashlib, json as _json_dedup
+                sig = f"{name}:{_json_dedup.dumps(args, sort_keys=True, ensure_ascii=False)}"
+                _last_tool_signatures.append(sig)
+                if len(_last_tool_signatures) > 3:
+                    _last_tool_signatures.pop(0)
+                # 同一签名连续 2 次 → 拒绝，强制 LLM 换方法
+                if _last_tool_signatures.count(sig) >= 2:
+                    yield ToolCallResult(
+                        tool_name=name,
+                        success=False,
+                        output=(
+                            f"⛔ 同一工具({name})相同参数已调用 2 次，均未解决问题。"
+                            f"请换完全不同的方法，或告知用户当前卡在哪里。"
+                        ),
+                        elapsed_ms=0,
+                    )
+                    tool_results.append({"name": name, "success": False,
+                                         "output": "重复调用被拒绝"})
+                    continue
 
                 yield ToolCallStart(
                     tool_name=name,

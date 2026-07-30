@@ -24,6 +24,20 @@ class BrowserSkill(BaseSkill):
     def get_tools(self) -> list[SkillTool]:
         return [
             SkillTool(
+                name="sogou_weixin",
+                description="Search WeChat public account articles via Sogou. Returns real mp.weixin.qq.com URLs with resolved redirect links. Use this instead of browse+sogou for WeChat article search.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search keyword (Chinese or English)"},
+                        "count": {"type": "integer", "description": "Number of results", "default": 10},
+                    },
+                    "required": ["query"],
+                },
+                handler=self._sogou_weixin_search,
+                permission_level=0,
+            ),
+            SkillTool(
                 name="browse",
                 description="Open a URL and return page title, text content, and links. Like browser reader mode — strips ads and scripts.",
                 parameters={
@@ -137,6 +151,79 @@ class BrowserSkill(BaseSkill):
                 pw_used = True
 
         return _fmt_browse_result(title, resp.url, text, links, max_chars)
+
+    # ── 搜狗微信搜索 ──────────────────────────────────────────
+
+    async def _sogou_weixin_search(self, query: str, count: int = 10) -> str:
+        """搜索微信公众号文章，返回标题+摘要+真实链接。
+
+        搜狗微信返回内部跳转链接，此方法用 Bing site:mp.weixin.qq.com
+        反查每篇文章的真实链接。
+        """
+        import urllib.parse as _up
+        import re as _re
+
+        # 1. 从搜狗获取文章标题和摘要
+        encoded = _up.quote(query)
+        url = f"https://weixin.sogou.com/weixin?type=2&query={encoded}&ie=utf8"
+
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                resp = await client.get(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 TianshuBrowser/0.2",
+                    "Accept-Language": "zh-CN,zh;q=0.9",
+                })
+                resp.raise_for_status()
+                html = resp.text
+        except Exception as e:
+            return f"❌ 搜狗微信搜索失败: {e}"
+
+        items = _re.findall(
+            r'<h3[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?<p[^>]*>(.*?)</p>',
+            html, re.DOTALL | re.IGNORECASE,
+        )
+
+        if not items:
+            return f"🔍 搜狗微信: {query}\n\n未找到相关文章"
+
+        results = []
+        for href, title_raw, snippet_raw in items[:count]:
+            title = _re.sub(r"<[^>]+>", "", title_raw).strip()
+            snippet = _re.sub(r"<[^>]+>", "", snippet_raw).strip()
+
+            # 2. 用标题在 Bing 反查真实 mp.weixin.qq.com 链接
+            real_url = ""
+            try:
+                q = _up.quote(f'site:mp.weixin.qq.com {title[:40]}')
+                async with httpx.AsyncClient(timeout=10) as client:
+                    r = await client.get(
+                        f"https://cn.bing.com/search?q={q}&count=3",
+                        headers={"User-Agent": "Mozilla/5.0 TianshuBrowser/0.2"},
+                    )
+                    # 找 mp.weixin.qq.com 链接
+                    matches = _re.findall(
+                        r'<a[^>]+href="(https?://mp\.weixin\.qq\.com[^"]+)"',
+                        r.text,
+                    )
+                    if matches:
+                        real_url = matches[0].replace("&amp;", "&")
+            except Exception:
+                pass
+
+            results.append({
+                "title": title,
+                "snippet": snippet[:200],
+                "url": real_url or f"(需手动搜索) https://www.bing.com/search?q={_up.quote(title)}",
+            })
+
+        lines = [f"🔍 搜狗微信: {query}  ({len(results)} 篇)\n"]
+        for i, r in enumerate(results):
+            lines.append(f"[{i + 1}] {r['title']}")
+            if r["snippet"]:
+                lines.append(f"    {r['snippet'][:150]}")
+            lines.append(f"    {r['url']}")
+            lines.append("")
+        return "\n".join(lines)
 
     # ── Edge CDP 渲染（独立自主，零外部下载）─────────────────
 
