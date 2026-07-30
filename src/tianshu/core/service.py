@@ -73,8 +73,9 @@ def _classify_error(error: Exception, provider_name: str, model_id: str) -> str:
             f"🏗️ 模型繁忙 ({model_ref})\n"
             f"   服务器过载，稍后自动重试。"
         )
-    # 未知错误
-    return f"❌ {model_ref}: {msg[:300]}"
+    # 未知错误（含空白消息兜底）
+    detail = msg[:300] if msg.strip() else "(无详细错误信息)"
+    return f"❌ {model_ref}: {detail}"
 
 
 class AgentCore:
@@ -471,7 +472,7 @@ class AgentCore:
 
         # 3.5 Plan Mode: 生成执行计划
         _plan = None
-        if self._mode == "plan" and self._policy_engine:
+        if self._mode == "plan":
             from .planner import build_planner_prompt, parse_plan_from_json, format_plan_ascii
             try:
                 plan_resp = await provider.chat(
@@ -481,15 +482,14 @@ class AgentCore:
                 _plan = parse_plan_from_json(plan_resp.content or "")
                 if _plan and _plan.steps:
                     yield ContentDelta(text=f"\n{format_plan_ascii(_plan)}\n")
-                    # 将计划注入上下文
                     plan_context = (
                         f"[执行计划]\n目标: {_plan.goal}\n"
                         + "\n".join(f"  Step {s.id}: {s.goal}" for s in _plan.steps)
                         + "\n请按步骤执行。每完成一步，告知进度。"
                     )
                     messages.append({"role": "user", "content": plan_context})
-            except Exception:
-                pass  # 计划生成失败，继续正常 ReAct
+            except Exception as e:
+                yield ContentDelta(text=f"\n[Plan generation failed: {e}]\n")
 
         # 4. ReAct 循环（流式版本）—— Token 预算驱动
         tool_results: list[dict[str, Any]] = []
