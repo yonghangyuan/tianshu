@@ -1,0 +1,56 @@
+# 天枢决策策略 —— 天爻核心
+# 每次工具执行前，策略引擎逐条评估。命中 deny → 拒绝执行 · confirm → 弹窗确认 · allow → 放行
+
+policies:
+  # ── 安全：禁止操作系统关键目录 ──
+  - name: no-system-modify
+    description: 禁止修改 Windows 系统目录
+    rule:
+      tool_in: [shell_exec, write_file, download]
+      path_match: "C:/Windows/*"
+    action: deny
+    message: "⛔ 不允许操作系统目录 (C:/Windows)"
+
+  # ── 安全：禁止删除关键文件 ──
+  - name: no-dangerous-commands
+    description: 禁止危险的 shell 命令
+    rule:
+      tool_in: [shell_exec]
+      command_contains: ["rm -rf", "del /f /s", "format", "dd if=", "shutdown", "taskkill /f"]
+    action: deny
+    message: "⛔ 该命令可能造成不可逆的系统破坏"
+
+  # ── 数据主权：上传目标审查 ──
+  - name: restrict-upload-domains
+    description: 上传文件到境外服务器需确认
+    rule:
+      tool_in: [upload]
+      url_not_match: ["*.cn", "*.china", "localhost", "127.0.0.1"]
+    action: confirm
+    message: "⚠️ 上传目标可能非国内服务器，确认继续？"
+
+  # ── 数据主权：搜索数据不出境 ──
+  - name: search-data-sovereignty
+    description: 浏览器访问需确认（防止敏感数据外泄）
+    rule:
+      tool_in: [browse]
+    action: allow  # 默认允许，可改为 confirm 加强管控
+    message: ""
+
+  # ── 隐私：禁止读取敏感文件 ──
+  - name: no-read-secrets
+    description: 禁止读取可能包含密钥/密码的文件
+    rule:
+      tool_in: [read_file, shell_exec]
+      path_match: ["*.env", "*.key", "*secret*", "*password*", "*.pem", "*credential*"]
+    action: confirm
+    message: "⚠️ 该文件可能包含敏感信息（密钥/密码），确认读取？"
+
+  # ── 网络：限制外部脚本执行 ──
+  - name: no-remote-script-exec
+    description: 禁止直接执行远程下载的脚本
+    rule:
+      tool_in: [shell_exec]
+      command_contains: ["curl", "wget", "Invoke-WebRequest", "iwr"]
+    action: confirm
+    message: "⚠️ 即将从网络下载并执行内容，确认？"

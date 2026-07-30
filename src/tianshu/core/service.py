@@ -104,6 +104,7 @@ class AgentCore:
         self._confirm_pending: Any = None
         self._tool_registry: Any = None  # ToolRegistry
         self._mode: str = "normal"       # normal / plan / auto
+        self._policy_engine: Any = None  # PolicyEngine
 
     # ── 初始化 ───────────────────────────────────────────────────────
 
@@ -127,6 +128,16 @@ class AgentCore:
         from .tool_registry import ToolRegistry, ToolInfo
         self._tool_registry = ToolRegistry()
         self._tool_registry.scan_skills(self._skills.loader)
+
+        # 策略引擎（天爻）
+        from .policy_engine import PolicyEngine
+        from pathlib import Path as _Path
+        self._policy_engine = PolicyEngine()
+        for candidate in ["config/policy.yaml", str(_Path(__file__).parent.parent.parent.parent / "config" / "policy.yaml")]:
+            if _Path(candidate).exists():
+                self._policy_engine.load(candidate)
+                break
+
         # 注册内置工具
         for ti in [
             ToolInfo("get_model_status", "View registered AI models.",
@@ -649,6 +660,33 @@ class AgentCore:
                                 "success": False,
                                 "output": result_text,
                             })
+                            continue
+
+                # ── 天爻策略检查 ──
+                if self._policy_engine and self._policy_engine.enabled:
+                    decision = self._policy_engine.evaluate(name, args)
+                    if decision.action == "deny":
+                        yield ToolCallResult(
+                            tool_name=name, success=False,
+                            output=decision.message or f"策略拒绝: {decision.policy_name}",
+                            elapsed_ms=0,
+                        )
+                        tool_results.append({"name": name, "success": False, "output": f"policy_deny:{decision.policy_name}"})
+                        continue
+                    elif decision.action == "confirm" and not getattr(self, '_automode', False):
+                        confirm_event = asyncio.Event()
+                        self._confirm_allowed = False; self._confirm_pending = confirm_event
+                        yield ToolCallConfirm(
+                            tool_name=name, tool_args=args,
+                            permission_level=3,
+                        )
+                        try:
+                            await asyncio.wait_for(confirm_event.wait(), timeout=60)
+                        except asyncio.TimeoutError:
+                            self._confirm_allowed = False
+                        if not self._confirm_allowed:
+                            yield ToolCallResult(tool_name=name, success=False,
+                                output=f"策略确认被拒: {decision.policy_name}", elapsed_ms=0)
                             continue
 
                 # ── 执行工具 ──
