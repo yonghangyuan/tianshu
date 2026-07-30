@@ -22,6 +22,7 @@ class ShellSkill(BaseSkill):
                 "required": ["command"],
             },
             handler=self._exec,
+            permission_level=2,  # WRITE
         )]
 
     async def _exec(self, command: str, timeout: int = 30) -> str:

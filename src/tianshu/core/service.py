@@ -102,6 +102,8 @@ class AgentCore:
         self._last_reasoning = ""  # 最近一次推理过程（/think 命令查看）
         self._confirm_allowed = False
         self._confirm_pending: Any = None
+        self._tool_registry: Any = None  # ToolRegistry
+        self._mode: str = "normal"       # normal / plan / auto
 
     # ── 初始化 ───────────────────────────────────────────────────────
 
@@ -120,6 +122,29 @@ class AgentCore:
 
         if skill_discover:
             self._skills.discover_and_load()
+
+        # 工具注册中心
+        from .tool_registry import ToolRegistry, ToolInfo
+        self._tool_registry = ToolRegistry()
+        self._tool_registry.scan_skills(self._skills.loader)
+        # 注册内置工具
+        for ti in [
+            ToolInfo("get_model_status", "View registered AI models.",
+                     {"type": "object", "properties": {}, "required": []},
+                     None, permission=0, skill_name="core"),
+            ToolInfo("remember_fact", "Save a fact to long-term memory.",
+                     {"type": "object", "properties": {
+                         "key": {"type": "string"}, "value": {"type": "string"},
+                         "category": {"type": "string", "default": "fact"},
+                     }, "required": ["key", "value"]},
+                     None, permission=0, skill_name="core"),
+            ToolInfo("recall_memory", "Search long-term memory.",
+                     {"type": "object", "properties": {
+                         "query": {"type": "string"},
+                     }, "required": ["query"]},
+                     None, permission=0, skill_name="core"),
+        ]:
+            self._tool_registry.register(ti)
 
         # 加载 Plugins + Cron
         self._plugins.load_all()
@@ -803,32 +828,9 @@ class AgentCore:
         return messages
 
     def _get_tools(self) -> list[dict[str, Any]] | None:
-        tools = self._skills.loader.get_all_tools()
-        # 基础工具
-        tools.extend([
-            {"type": "function", "function": {
-                "name": "get_model_status",
-                "description": "View registered AI models.",
-                "parameters": {"type": "object", "properties": {}, "required": []},
-            }},
-            {"type": "function", "function": {
-                "name": "remember_fact",
-                "description": "Save an important fact or preference to long-term memory.",
-                "parameters": {"type": "object", "properties": {
-                    "key": {"type": "string", "description": "Fact key, e.g. user_prefers_v4_pro"},
-                    "value": {"type": "string", "description": "Fact value"},
-                    "category": {"type": "string", "description": "preference | fact | todo", "default": "fact"},
-                }, "required": ["key", "value"]},
-            }},
-            {"type": "function", "function": {
-                "name": "recall_memory",
-                "description": "Search long-term memory for relevant past conversations or facts.",
-                "parameters": {"type": "object", "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                }, "required": ["query"]},
-            }},
-        ])
-        return tools or None
+        if self._tool_registry:
+            return self._tool_registry.get_tools(mode=self._mode)
+        return None
 
     def _get_tool_permission(self, name: str) -> int:
         """获取工具的风险级别。

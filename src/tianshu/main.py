@@ -385,13 +385,13 @@ def _main_sync() -> None:
         nonlocal _mode
         if _mode == "normal":
             _mode = "auto"
-            core._automode = True
+            core._automode = True; core._mode = "auto"
         elif _mode == "auto":
             _mode = "plan"
-            core._automode = False
+            core._automode = False; core._mode = "plan"
         elif _mode == "plan":
             _mode = "normal"
-            core._automode = False
+            core._automode = False; core._mode = "normal"
         _rich_console.print(f"\r  {_mode_label(_mode)}  [dim](Shift+Tab / /mode 切换)[/dim]")
         return _mode
 
@@ -479,6 +479,12 @@ def _main_sync() -> None:
         elif user_input.startswith("session") or user_input.startswith("/session"):
             asyncio.run(_handle_session(user_input, session_store, ctx))
             continue
+        elif user_input in ("tools", "/tools"):
+            _show_tools(core)
+            continue
+        elif user_input in ("reload", "/reload"):
+            _do_reload(core, providers_yaml, routing_config, system_prompt)
+            continue
         elif user_input in ("clear", "/clear"):
             _rich_console.clear()
             continue
@@ -517,6 +523,32 @@ def _main_sync() -> None:
         session_store.save(ctx, title=user_input[:50])
 
     _rich_console.print("[dim]天枢已关闭[/dim]")
+
+
+def _show_tools(core) -> None:
+    """显示所有已注册的工具。"""
+    reg = core._tool_registry
+    if not reg:
+        _rich_console.print("[dim]ToolRegistry 未初始化[/dim]")
+        return
+    _rich_console.print()
+    _rich_console.print(reg.stats())
+    _rich_console.print()
+
+
+def _do_reload(core, providers_yaml, routing_config, system_prompt) -> None:
+    """热加载配置：重新读 providers.yaml + skills。"""
+    from tianshu.core.setup import load_user_keys
+    from tianshu.core.config import load_providers, load_routing_config
+    try:
+        user_keys = load_user_keys()
+        registry = load_providers(providers_yaml, extra_keys=user_keys)
+        routing = load_routing_config(providers_yaml)
+        core.setup(registry=registry, routing=routing, system_prompt=system_prompt,
+                   db_path=str(_project_root / "tianshu.db"), skill_discover=True)
+        _rich_console.print(f"  ✅ 已重载: {core.model_count} 模型, {core._tool_registry.count if core._tool_registry else '?'} 工具\n")
+    except Exception as e:
+        _rich_console.print(f"  [red]重载失败: {e}[/red]\n")
 
 
 def _resolve_at_refs(user_input: str) -> str:
