@@ -476,10 +476,21 @@ class AgentCore:
             request.input, ctx, level, provider_info, provider
         )
 
-        # 3.4 记忆预取：召回与当前话题相关的历史记忆
+        # 3.4 记忆：预取 + 触发权重提升
         memory_context = await self._memory.prefetch(request.input)
         if memory_context:
             messages.append({"role": "system", "content": memory_context})
+            # 提升被召回记忆的权重
+            for line in memory_context.split("\n"):
+                if "]: " in line:
+                    key = line.split("]: ")[0].split("] ")[-1].strip()
+                    if key:
+                        await self._memory.boost(key)
+
+        # 每 10 轮触发记忆衰减+压缩
+        self._turn_counter = getattr(self, '_turn_counter', 0) + 1
+        if self._turn_counter % 10 == 0:
+            asyncio.ensure_future(self._memory.maybe_compress(provider))
 
         # 3.5 Plan Mode: 生成执行计划
         _plan = None

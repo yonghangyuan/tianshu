@@ -324,6 +324,93 @@ class MemoryService:
             pass
         return []
 
+    # ── 记忆衰减 ──────────────────────────────────────────────────
+
+    async def decay(self, max_age_days: int = 30, min_importance: int = 1) -> int:
+        """衰减旧记忆：删除超过 max_age_days 天且重要性 <= min_importance 的记忆。
+
+        保留高重要性记忆（importance >= 3）和近期高频访问的记忆。
+        返回删除的条数。
+        """
+        await self._init()
+        cutoff = time.time() - max_age_days * 86400
+        deleted = 0
+
+        async with aiosqlite.connect(self._db_path) as db:
+            # 删除旧且低优先级的记忆
+            cursor = await db.execute(
+                "DELETE FROM memory_meta WHERE created < ? AND importance <= ? "
+                "AND access_count < 3",
+                (cutoff, min_importance),
+            )
+            deleted = cursor.rowcount
+            await db.commit()
+
+            # 同步删除 FTS5 索引中的对应条目
+            if deleted > 0:
+                await db.execute("DELETE FROM memories WHERE timestamp < ?", (cutoff,))
+                await db.commit()
+
+        return deleted
+
+    async def boost(self, key: str) -> None:
+        """提升一条记忆的重要性——被召回时调用。"""
+        await self._init()
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "UPDATE memory_meta SET access_count = access_count + 1, "
+                "importance = MIN(5, importance + 1), updated = ? "
+                "WHERE key = ?",
+                (time.time(), key),
+            )
+            await db.commit()
+
+    # ── 记忆压缩 ──────────────────────────────────────────────────
+
+    async def compress(self, provider=None, max_chars: int = 3000) -> str | None:
+        """压缩 MEMORY.md：超出 max_chars 时用 LLM 总结，保留关键事实。
+
+        返回压缩后的文本，或 None（无需压缩）。
+        """
+        content = self.read_memory_file()
+        if len(content) <= max_chars:
+            return None
+
+        if not provider:
+            return None
+
+        prompt = (
+            "You are a memory compressor. Below is a long memory file. "
+            "Condense it to under 2000 characters while preserving:\n"
+            "1. User preferences (model choices, tools they like)\n"
+            "2. Important facts (names, projects, deadlines)\n"
+            "3. Recurring patterns (frequent topics, workflows)\n"
+            "Remove: redundant facts, one-time queries, stale information.\n\n"
+            f"MEMORY:\n{content[:5000]}\n\n"
+            "Condensed memory (under 2000 chars):"
+        )
+        try:
+            resp = await provider.chat(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=800, temperature=0.2,
+            )
+            compressed = (resp.content or "").strip()
+            if compressed and len(compressed) > 100:
+                # 备份原内容，写入压缩版
+                backup_path = self._dir / "MEMORY.backup.md"
+                backup_path.write_text(content, encoding="utf-8")
+                self._mem_file.write_text(compressed, encoding="utf-8")
+                return compressed
+        except Exception:
+            pass
+        return None
+
+    async def maybe_compress(self, provider=None) -> bool:
+        """检查是否需要压缩，如果超出阈值则自动执行。"""
+        await self.decay()  # 先衰减再压缩
+        result = await self.compress(provider)
+        return result is not None
+
     async def count(self) -> int:
         await self._init()
         async with aiosqlite.connect(str(self._db_path)) as db:
