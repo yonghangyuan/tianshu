@@ -486,7 +486,10 @@ class AgentCore:
                     max_tokens=1000, temperature=0.3,
                 )
                 _plan = parse_plan_from_json(plan_resp.content or "")
-                if _plan and _plan.steps:
+                # 简单任务（≤2 步）跳过计划，直接对话
+                if _plan and len(_plan.steps) <= 2:
+                    _plan = None
+                elif _plan and _plan.steps:
                     yield ContentDelta(text=f"\n{format_plan_ascii(_plan)}\n")
                     plan_context = (
                         f"[执行计划]\n目标: {_plan.goal}\n"

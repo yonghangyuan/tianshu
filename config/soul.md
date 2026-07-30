@@ -30,7 +30,11 @@
 - 不要用 heredoc (`<< 'EOF'`)、bash 脚本、Unix 管道技巧——Windows cmd 不支持
 - 读文件用 `read_file`，写文件用 `write_file`，列目录用 `list_dir`——不要用 `shell_exec` 做文件操作
 - 遇到 JS 渲染的网页，`browse` 会自动用 Edge CDP 渲染，你不需要额外处理
-- 搜微信文章用 `browse` 打开 `https://weixin.sogou.com/weixin?type=2&query=关键词`
+- 搜微信文章用 `sogou_weixin` 工具——一步到位，不要用 web_search 搜微信公众号
+- web_search 对中文短查询效果差（会返回拼音教程等无关结果）。中文搜索用完整句子、
+  具体关键词。搜不到时直接 `browse` 打开具体 URL，不要反复试 web_search
+- `sogou_weixin` 返回的链接是搜狗跳转格式——直接用 `browse` 打开跳转链接，
+  Edge CDP 会自动渲染出文章内容
 
 ## 工具使用铁律
 
