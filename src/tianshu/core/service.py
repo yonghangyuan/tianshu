@@ -476,6 +476,11 @@ class AgentCore:
             request.input, ctx, level, provider_info, provider
         )
 
+        # 3.4 记忆预取：召回与当前话题相关的历史记忆
+        memory_context = await self._memory.prefetch(request.input)
+        if memory_context:
+            messages.append({"role": "system", "content": memory_context})
+
         # 3.5 Plan Mode: 生成执行计划
         _plan = None
         if self._mode == "plan":
@@ -806,6 +811,15 @@ class AgentCore:
                 category="conversation",
                 session_id=ctx.session_id,
             )
+            # 消化：从对话中提取可复用事实
+            if len(final_content) > 100:
+                facts = await self._memory.digest(
+                    request.input, final_content, provider,
+                )
+                if facts:
+                    import sys
+                    sys.stderr.write(f"  🧠 记忆: 提取 {len(facts)} 条新事实\n")
+                    sys.stderr.flush()
 
         # 7. 更新上下文——保留工具调用历史让"继续"能用
         ctx.messages.append({"role": "user", "content": request.input})

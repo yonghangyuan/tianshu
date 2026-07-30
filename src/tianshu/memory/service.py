@@ -258,6 +258,72 @@ class MemoryService:
 
     # ── 统计 ─────────────────────────────────────────────────────────
 
+    # ── 跨会话记忆（Prefetch + Digest）─────────────────────────────
+
+    async def prefetch(self, user_input: str, limit: int = 5) -> str:
+        """对话前召回相关记忆，注入上下文。
+
+        搜索 MEMORY.md + SQLite FTS5，返回与当前输入相关的历史记忆片段。
+        """
+        await self._init()
+        results = await self.recall(user_input, limit=limit)
+        if not results:
+            return ""
+
+        lines = ["[相关记忆]"]
+        for r in results:
+            lines.append(f"- [{r['category']}] {r['key']}: {r['value'][:200]}")
+        return "\n".join(lines)
+
+    async def digest(
+        self,
+        user_input: str,
+        assistant_response: str,
+        provider=None,
+    ) -> list[str]:
+        """对话后提取关键事实，保存到 MEMORY.md + SQLite。
+
+        用 LLM 从对话中提取可复用的事实，存入长期记忆。
+        返回提取到的事实列表。
+        """
+        await self._init()
+
+        if not provider:
+            return []
+
+        prompt = (
+            "Extract 1-3 reusable facts from this conversation. "
+            "Each fact should be a single sentence that would be useful to remember.\n"
+            "Return JSON array: [{\"key\":\"short_key\", \"value\":\"one sentence fact\", "
+            "\"category\":\"preference|fact|goal\"}]\n\n"
+            f"User: {user_input[:200]}\n"
+            f"Assistant: {assistant_response[:300]}\n"
+        )
+        try:
+            resp = await provider.chat(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300, temperature=0.2,
+            )
+            text = resp.content or ""
+            # 提取 JSON
+            import re as _re
+            match = _re.search(r'\[[\s\S]*\]', text)
+            if match:
+                items = json.loads(match.group())
+                facts = []
+                for item in items[:3]:
+                    key = item.get("key", "")
+                    value = item.get("value", "")
+                    category = item.get("category", "fact")
+                    if key and value:
+                        await self.remember(key, value, category)
+                        self.append_memory(f"- **{key}**: {value}")
+                        facts.append(value)
+                return facts
+        except Exception:
+            pass
+        return []
+
     async def count(self) -> int:
         await self._init()
         async with aiosqlite.connect(str(self._db_path)) as db:

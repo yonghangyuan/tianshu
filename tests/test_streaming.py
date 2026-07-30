@@ -307,6 +307,8 @@ class TestRunStream:
         core._memory = MagicMock()
         core._memory.auto_profile = AsyncMock(return_value=[])
         core._memory.remember = AsyncMock()
+        core._memory.prefetch = AsyncMock(return_value="")
+        core._memory.digest = AsyncMock(return_value=[])
 
         core._evolution_counter = 0
 
