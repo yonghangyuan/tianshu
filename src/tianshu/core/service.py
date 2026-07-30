@@ -32,6 +32,51 @@ from .router import ModelRouter, RoutingConfig
 from .status import route as _s_route, tool as _s_tool, done as _s_done, error as _s_error
 
 
+def _classify_error(error: Exception, provider_name: str, model_id: str) -> str:
+    """分类 API 错误，返回人类可读的提示。"""
+    msg = str(error)
+    model_ref = f"{provider_name}/{model_id}"
+
+    # 网络错误
+    if any(k in msg.lower() for k in ("connect", "timeout", "resolve", "refused", "network")):
+        return (
+            f"🌐 网络不通 ({model_ref})\n"
+            f"   请检查网络连接、代理设置、或 API 地址是否正确。"
+        )
+    # 401/403 鉴权错误
+    if "401" in msg or "403" in msg or "unauthorized" in msg.lower():
+        return (
+            f"🔑 API Key 无效 ({model_ref})\n"
+            f"   请用 /setup 重新配置 Key，或检查环境变量。"
+        )
+    # 400 参数错误
+    if "400" in msg:
+        return (
+            f"⚠️ 请求格式错误 ({model_ref})\n"
+            f"   {msg[:200]}"
+        )
+    # 429 限流
+    if "429" in msg or "rate" in msg.lower():
+        return (
+            f"⏳ 请求太频繁 ({model_ref})\n"
+            f"   稍后自动重试。如果持续出现，请降低使用频率。"
+        )
+    # 上下文太长
+    if "context" in msg.lower() or "token" in msg.lower() or "maximum" in msg.lower():
+        return (
+            f"📏 上下文超长 ({model_ref})\n"
+            f"   对话历史已自动压缩，请重试。"
+        )
+    # 模型过载/不可用
+    if "overload" in msg.lower() or "503" in msg or "unavailable" in msg.lower():
+        return (
+            f"🏗️ 模型繁忙 ({model_ref})\n"
+            f"   服务器过载，稍后自动重试。或换用其他模型: /model list"
+        )
+    # 未知错误
+    return f"❌ {model_ref}: {msg[:300]}"
+
+
 class AgentCore:
     """Agent Core Service — 无状态的 Agent 执行引擎。
 
@@ -372,26 +417,40 @@ class AgentCore:
             request.input, ctx, level, provider_info, provider
         )
 
-        # 4. ReAct 循环（流式版本）
+        # 4. ReAct 循环（流式版本）—— Token 预算驱动
         tool_results: list[dict[str, Any]] = []
         reasoning: list[str] = []
         final_content = ""
         total_prompt_tokens = 0
         total_completion_tokens = 0
         tool_count = 0
-        # 重复调用检测：同一工具同一参数连续 2 次 → 停止并警告 LLM
         _last_tool_signatures: list[str] = []
 
-        for _round in range(10):  # MAX_TOOL_ROUNDS
-            # 最后一轮：强制总结，不准再调工具
-            is_final_round = (_round == 9)
-            if is_final_round:
+        # Token 预算：总计 64K tokens（约 DS 上下文窗口的 60%）
+        TOKEN_BUDGET = 64000
+        _budget_warned = False
+        _budget_exhausted = False
+        _round = 0
+
+        while not _budget_exhausted and _round < 24:
+            _round += 1
+            tokens_used = total_prompt_tokens + total_completion_tokens
+
+            # 预算检查
+            if tokens_used > TOKEN_BUDGET * 0.7 and not _budget_warned:
+                _budget_warned = True
                 messages.append({
                     "role": "user",
                     "content": (
-                        "已达到最大工具调用轮次。请基于已有信息给出最终回答，"
-                        "不要再调用任何工具。用中文回复。"
+                        f"已消耗 {tokens_used // 1000}K tokens。"
+                        "请基于现有信息尽快给出回答，只在必要时再搜一次。"
                     ),
+                })
+            elif tokens_used > TOKEN_BUDGET * 0.9:
+                _budget_exhausted = True
+                messages.append({
+                    "role": "user",
+                    "content": f"Token 预算耗尽 ({tokens_used // 1000}K / {TOKEN_BUDGET // 1000}K)。禁止再调工具，直接给出最终回答。",
                 })
 
             round_content = ""
@@ -400,7 +459,7 @@ class AgentCore:
 
             try:
                 # 最后一轮不传 tools，强制纯文本回复
-                tools_for_round = None if is_final_round else self._get_tools()
+                tools_for_round = None if _budget_exhausted else self._get_tools()
                 stream = provider.chat_stream(
                     messages=messages,
                     tools=tools_for_round,
@@ -426,10 +485,8 @@ class AgentCore:
                         total_completion_tokens += chunk.usage.completion_tokens
 
             except Exception as e:
-                yield StreamError(
-                    message=f"{provider.provider_name}/{model_id}: {e}",
-                    decision_id=decision_id,
-                )
+                error_msg = _classify_error(e, provider.provider_name, model_id)
+                yield StreamError(message=error_msg, decision_id=decision_id)
                 return
 
             # 更新 reasoning
