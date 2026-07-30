@@ -1,7 +1,22 @@
 [project]
 name = "tianshu"
-version = "0.1.0"
+version = "0.2.0"
 description = "天枢 Agent — 中国本土独立自主通用 AI Agent 框架"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "yonghangyuan"}]
+keywords = ["ai-agent", "cli", "deepseek", "llm", "agent-framework"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27.0",
@@ -12,6 +27,13 @@ dependencies = [
 
 [project.optional-dependencies]
 tui = ["prompt_toolkit>=3.0"]
+browser = ["websockets>=12.0"]  # Edge CDP 渲染需要
+all = ["prompt_toolkit>=3.0", "websockets>=12.0"]
+
+[project.urls]
+Homepage = "https://github.com/yonghangyuan/tianshu"
+Repository = "https://github.com/yonghangyuan/tianshu"
+Issues = "https://github.com/yonghangyuan/tianshu/issues"
 
 [project.scripts]
 tianshu = "tianshu.gateway.tui:main"
