@@ -492,9 +492,11 @@ class AgentCore:
         if self._turn_counter % 10 == 0:
             asyncio.ensure_future(self._memory.maybe_compress(provider))
 
-        # 3.5 Plan Mode: 生成执行计划
+        # 3.5 Plan Mode / /plan 命令: 生成执行计划
         _plan = None
-        if self._mode == "plan":
+        force_plan = getattr(self, '_force_plan', False)
+        self._force_plan = False
+        if self._mode == "plan" or force_plan:
             from .planner import build_planner_prompt, parse_plan_from_json, format_plan_ascii
             try:
                 plan_resp = await provider.chat(

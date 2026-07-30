@@ -263,6 +263,11 @@ def _register_builtins(reg: CommandRegistry) -> None:
     async def _session(ctx: CommandContext) -> None:
         ctx.print("[dim]会话管理（Phase 4 实现）[/dim]")
 
+    @reg.register("plan", aliases=["/plan"], category="conversation",
+                  description="强制使用 Planner 规划任务 (/plan <任务描述>)")
+    async def _plan_cmd(ctx: CommandContext) -> None:
+        ctx.print("[dim]Planner 规划（由主循环处理）[/dim]")
+
     @reg.register("mode", aliases=["/mode"], category="config",
                   description="循环切换模式: normal → auto → plan")
     async def _mode_cmd(ctx: CommandContext) -> None:

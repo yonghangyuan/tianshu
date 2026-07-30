@@ -467,6 +467,36 @@ def _main_sync() -> None:
         elif user_input in ("memory", "/memory"):
             asyncio.run(_show_memory(core.memory))
             continue
+        elif user_input.startswith("/memory ") or user_input.startswith("memory "):
+            parts = user_input.split(maxsplit=2)
+            sub = parts[1] if len(parts) > 1 else ""
+            arg = parts[2] if len(parts) > 2 else ""
+            if sub == "search" and arg:
+                results = asyncio.run(core.memory.recall(arg, limit=10))
+                if results:
+                    _rich_console.print(f"\n  ==== 搜索 '{arg}' ({len(results)} 条) ====")
+                    for r in results:
+                        _rich_console.print(f"  [[dim]{r['category']}[/dim]] {r['key']}: {r['value'][:120]}")
+                else:
+                    _rich_console.print(f"\n  [dim]未找到与 '{arg}' 相关的记忆[/dim]")
+                _rich_console.print()
+            elif sub == "stats":
+                count = asyncio.run(core.memory.count())
+                recent = asyncio.run(core.memory.list_recent(10))
+                _rich_console.print(f"\n  ==== 记忆统计 ====")
+                _rich_console.print(f"  总计: {count} 条")
+                if recent:
+                    cats = {}
+                    for r in recent:
+                        cats[r['category']] = cats.get(r['category'], 0) + 1
+                    _rich_console.print(f"  分类: {cats}")
+                _rich_console.print()
+            elif sub == "decay":
+                deleted = asyncio.run(core.memory.decay())
+                _rich_console.print(f"\n  ✅ 衰减清理: {deleted} 条旧记忆\n")
+            else:
+                _rich_console.print("\n  [dim]用法: /memory | /memory search <关键词> | /memory stats | /memory decay[/dim]\n")
+            continue
         elif user_input in ("plugin", "/plugin"):
             _show_plugins(core.plugins)
             continue
@@ -479,6 +509,11 @@ def _main_sync() -> None:
         elif user_input.startswith("session") or user_input.startswith("/session"):
             asyncio.run(_handle_session(user_input, session_store, ctx))
             continue
+        elif user_input.startswith("/plan ") or user_input.startswith("plan "):
+            core._force_plan = True
+            user_input = user_input.split(maxsplit=1)[1] if " " in user_input else user_input
+            _rich_console.print(f"[bold cyan]Plan mode forced[/bold cyan]")
+            # fall through to conversation
         elif user_input in ("tools", "/tools"):
             _show_tools(core)
             continue
