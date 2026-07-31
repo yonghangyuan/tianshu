@@ -36,7 +36,7 @@ class WebSearchSkill(BaseSkill):
             handler=self._search,
         )]
 
-    async def _search(self, query: str, count: int = 5) -> str:
+    async def _search(self, query: str, count: int = 5, **kwargs) -> str:
         # 依次尝试：必应中国 → 搜狗 → 必应国际 → 百度
         for engine in (
             self._search_cn_bing,

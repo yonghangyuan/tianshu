@@ -69,7 +69,7 @@ class FileOpsSkill(BaseSkill):
     # ── Implementations ─────────────────────────────────────────────
 
     async def _read_file(
-        self, path: str, offset: int = 1, limit: int = 200
+        self, path: str, offset: int = 1, limit: int = 200, **kwargs
     ) -> str:
         p = Path(path).expanduser().resolve()
         if not p.exists():
@@ -129,7 +129,7 @@ class FileOpsSkill(BaseSkill):
         return result
 
     async def _write_file(
-        self, path: str, content: str, encoding: str = "utf-8"
+        self, path: str, content: str, encoding: str = "utf-8", **kwargs
     ) -> str:
         p = Path(path).expanduser().resolve()
 
@@ -151,7 +151,7 @@ class FileOpsSkill(BaseSkill):
         return f"✅ {verb}: {p}\n   {len(content)} 字符, {_format_size(size)}"
 
     async def _list_dir(
-        self, path: str = ".", pattern: str = "", max_items: int = 50
+        self, path: str = ".", pattern: str = "", max_items: int = 50, **kwargs
     ) -> str:
         p = Path(path).expanduser().resolve()
         if not p.exists():

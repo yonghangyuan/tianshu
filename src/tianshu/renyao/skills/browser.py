@@ -85,7 +85,7 @@ class BrowserSkill(BaseSkill):
 
     # ── Browse (阅读模式) ──────────────────────────────────────────
 
-    async def _browse(self, url: str, max_chars: int = 8000) -> str:
+    async def _browse(self, url: str, max_chars: int = 8000, **kwargs) -> str:
         # 自动补全协议
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
@@ -369,7 +369,7 @@ class BrowserSkill(BaseSkill):
 
     # ── Download ────────────────────────────────────────────────────
 
-    async def _download(self, url: str, path: str = "") -> str:
+    async def _download(self, url: str, path: str = "", **kwargs) -> str:
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
@@ -419,7 +419,7 @@ class BrowserSkill(BaseSkill):
     # ── Upload ──────────────────────────────────────────────────────
 
     async def _upload(
-        self, local_path: str, url: str, method: str = "POST", field_name: str = "file"
+        self, local_path: str, url: str, method: str = "POST", field_name: str = "file", **kwargs
     ) -> str:
         src = Path(local_path).expanduser().resolve()
         if not src.exists():

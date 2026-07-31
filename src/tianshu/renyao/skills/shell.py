@@ -25,8 +25,8 @@ class ShellSkill(BaseSkill):
             permission_level=2,  # WRITE
         )]
 
-    async def _exec(self, command: str, timeout: int = 30) -> str:
-        from ...diyao.sandbox import DockerSandbox
-        sandbox = DockerSandbox()
+    async def _exec(self, command: str, timeout: int = 30, **kwargs) -> str:
+        from ...diyao.sandbox import LocalSandbox  # 服务器无 Docker，直接用本地
+        sandbox = LocalSandbox()
         result = await sandbox.run(command, timeout=timeout)
         return result.stdout or result.stderr or f"exit={result.exit_code}"
