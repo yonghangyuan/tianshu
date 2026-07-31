@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 import json
@@ -32,6 +32,8 @@ from tianshu.core.setup import load_user_keys
 
 _core: AgentCore | None = None
 _sessions: dict[str, AgentContext] = {}
+_ws_clients: list[WebSocket] = []
+_ws_names: dict[WebSocket, str] = {}
 
 
 @asynccontextmanager
@@ -260,6 +262,83 @@ async def models():
     }
 
 
+# ── WebSocket 群聊 ──────────────────────────────────────────────
+
+@app.websocket("/ws")
+async def websocket_chat(ws: WebSocket):
+    await ws.accept()
+    _ws_clients.append(ws)
+    _ws_names[ws] = "匿名"
+
+    # 发送当前状态
+    if _core:
+        await ws.send_json({
+            "type": "status",
+            "models": _core.model_count,
+            "skills": _core.skills.count,
+        })
+
+    # 广播加入消息
+    await _broadcast({"type": "join", "from": _ws_names[ws], "members": list(_ws_names.values())})
+
+    try:
+        while True:
+            data = await ws.receive_json()
+            msg_type = data.get("type", "chat")
+            sender = data.get("from", "匿名")
+            content = data.get("content", "")
+
+            # 更新名字
+            if sender != _ws_names.get(ws, ""):
+                old_name = _ws_names[ws]
+                _ws_names[ws] = sender
+                await _broadcast({"type": "join", "from": sender, "members": list(_ws_names.values())})
+
+            if msg_type == "chat" and content:
+                # 广播用户消息
+                await _broadcast({"type": "chat", "from": sender, "content": content})
+
+                # 检测 @天枢
+                if _core and ("@天枢" in content or "@tianshu" in content.lower()):
+                    user_input = content.replace("@天枢", "").replace("@tianshu", "").strip()
+                    if user_input:
+                        resp = await _core.run(AgentRequest(input=user_input, task_type="conversation"))
+                        tools_info = [{"name": t.get("name", "?"), "ok": t.get("success", True)} for t in resp.tool_calls]
+                        await _broadcast({
+                            "type": "chat", "from": "天枢",
+                            "content": resp.content or "(空回复)",
+                            "tools": tools_info,
+                        })
+                        # 广播工具事件
+                        for t in resp.tool_calls:
+                            await _broadcast({
+                                "type": "tool",
+                                "name": t.get("name", "?"),
+                                "ok": t.get("success", True),
+                            })
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        _ws_clients.remove(ws)
+        name = _ws_names.pop(ws, "匿名")
+        await _broadcast({"type": "join", "from": f"{name} 离开", "members": list(_ws_names.values())})
+
+
+async def _broadcast(msg: dict):
+    disconnected = []
+    for client in _ws_clients:
+        try:
+            await client.send_json(msg)
+        except Exception:
+            disconnected.append(client)
+    for c in disconnected:
+        if c in _ws_clients:
+            _ws_clients.remove(c)
+
+
 # ── CLI 入口 ──────────────────────────────────────────────────────
 
 def main():
@@ -267,7 +346,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8720)
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0")
     args = parser.parse_args()
     print(f"天枢 API Server → http://{args.host}:{args.port}")
     print(f"  /health  /run  /tools  /audit  /memory  /skills  /models")
