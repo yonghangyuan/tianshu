@@ -50,6 +50,22 @@ button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#
   </div>
 </main>
 <script>
+// 轻量 Markdown 渲染（零依赖）
+function md2html(s){
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^### (.+)$/gm,'<h4>$1</h4>')
+    .replace(/^## (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^# (.+)$/gm,'<h2>$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/\*(.+?)\*/g,'<i>$1</i>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/^\- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s,function(m){return '<ul>'+m+'</ul>'})
+    .replace(/───+/g,'<hr>')
+    .replace(/\n/g,'<br>');
+}
+
 const S = localStorage;
 let name = S.getItem('ts_name')||'';
 let lastId = 0;
@@ -64,7 +80,8 @@ function addMsg(cls,from,tx,id){
   const d=document.createElement('div');d.className='msg '+cls;
   const av=from==='天枢'?'枢':(from[0]||'?');
   const nameCls = from===name?' (你)':'';
-  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+nameCls+'</div><div class="tx">'+e(tx)+'</div></div>';
+  const body = from==='天枢' ? md2html(tx) : e(tx);
+  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+nameCls+'</div><div class="tx">'+body+'</div></div>';
   const chat=document.getElementById('chat');
   chat.appendChild(d); d.scrollIntoView({behavior:'smooth'});
   while(chat.children.length>100) chat.removeChild(chat.firstChild);
