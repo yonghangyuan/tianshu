@@ -19,7 +19,7 @@ from pydantic import BaseModel
 import json
 
 # 确保项目根在 path
-_project_root = Path(__file__).resolve().parents[2]
+_project_root = Path(__file__).resolve().parents[3]  # gateway→tianshu→src→root
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
