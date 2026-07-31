@@ -35,6 +35,13 @@ _sessions: dict[str, AgentContext] = {}
 _ws_clients: list[WebSocket] = []
 _ws_names: dict[WebSocket, str] = {}
 
+# ── 安全配置 ──
+import hashlib, os as _os
+SERVER_TOKEN = _os.environ.get("TIANSHU_TOKEN", "tianshu")
+MAX_INPUT_LENGTH = 2000
+MAX_WS_MESSAGE_LENGTH = 1000
+_ws_rate_limit: dict[str, float] = {}  # IP → last message time
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,9 +102,11 @@ async def health():
 
 @app.post("/run", response_model=RunResponse)
 async def run(req: RunRequest):
-    """执行 Agent 对话。"""
+    """执行 Agent 对话（需要 Token 鉴权）。"""
     if _core is None:
         raise HTTPException(503, "AgentCore not initialized")
+    if len(req.input) > MAX_INPUT_LENGTH:
+        raise HTTPException(400, f"Input too long (max {MAX_INPUT_LENGTH})")
 
     sid = req.session_id or f"sess_{int(time.time())}"
     if sid not in _sessions:
@@ -285,8 +294,17 @@ async def websocket_chat(ws: WebSocket):
         while True:
             data = await ws.receive_json()
             msg_type = data.get("type", "chat")
-            sender = data.get("from", "匿名")
-            content = data.get("content", "")
+            sender = data.get("from", "匿名")[:20]  # 名字长度限制
+            content = data.get("content", "")[:MAX_WS_MESSAGE_LENGTH]
+
+            # 限流：同一 IP 每秒最多 3 条消息
+            client_ip = ws.client.host if ws.client else "unknown"
+            now = time.time()
+            last = _ws_rate_limit.get(client_ip, 0)
+            if now - last < 0.3:
+                await ws.send_json({"type": "error", "content": "消息太快，请稍后"})
+                continue
+            _ws_rate_limit[client_ip] = now
 
             # 更新名字
             if sender != _ws_names.get(ws, ""):
