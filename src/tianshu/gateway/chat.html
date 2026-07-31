@@ -45,7 +45,10 @@ button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#
   <div id="chat"><div class="event">已连接到星群——@天枢 即可召唤</div></div>
   <div id="bar">
     <input id="ni" placeholder="名字" value="">
-    <input id="mi" placeholder="@天枢 帮我..." onkeypress="if(event.key==='Enter')send()">
+    <div style="position:relative;flex:1">
+      <input id="mi" placeholder="输入消息，@ 提及某人..." onkeypress="if(event.key==='Enter')send()" oninput="onInput()" onkeydown="onKey(event)" autocomplete="off">
+      <div id="ac" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:#1e293b;border:1px solid #334155;border-radius:6px;max-height:160px;overflow-y:auto;z-index:99"></div>
+    </div>
     <input type="file" id="fi" style="display:none" onchange="uploadFile()">
     <button onclick="document.getElementById('fi').click()" style="background:#334155">📎</button>
     <button onclick="send()">发送</button>
@@ -116,6 +119,7 @@ async function poll(){
   try{
     const resp = await fetch('/chat/messages?since='+lastId);
     const data = await resp.json();
+    if(data.users) window._chatUsers=data.users;
     for(const m of data.messages||[]){
       if(m.id>lastId) lastId=m.id;
       const cls = m.from==='天枢'?'bot':'user';
@@ -132,6 +136,32 @@ async function uploadFile(){
   const fd=new FormData();fd.append('file',file);fd.append('sender',n);
   try{await fetch('/chat/upload',{method:'POST',body:fd});fi.value='';poll();}
   catch(e){}
+}
+
+// @ 自动补全
+let acIdx=-1,acList=[],acBase='';
+function onInput(){
+  const mi=document.getElementById('mi'),ac=document.getElementById('ac');
+  const v=mi.value,pos=mi.selectionStart,atPos=v.lastIndexOf('@',pos);
+  if(atPos>=0&&(atPos===0||v[atPos-1]===' ')){
+    const q=v.slice(atPos+1,pos).toLowerCase();
+    acBase=v.slice(0,atPos);
+    acList=['天枢'].concat((window._chatUsers||[]).filter(u=>u!=='天枢'&&u!==name)).filter(u=>u.toLowerCase().includes(q));
+    if(acList.length){acIdx=0;renderAc();ac.style.display='block';return}
+  }ac.style.display='none';acIdx=-1;
+}
+function renderAc(){
+  document.getElementById('ac').innerHTML=acList.map((u,i)=>'<div style="padding:5px 8px;cursor:pointer;font-size:13px;'+(i===acIdx?'background:#2563eb;border-radius:4px':'')+'" onmousedown="pickAc('+i+')">@'+u+'</div>').join('');
+}
+function pickAc(i){
+  const mi=document.getElementById('mi');mi.value=acBase+'@'+acList[i]+' ';document.getElementById('ac').style.display='none';mi.focus();
+}
+function onKey(e){
+  const ac=document.getElementById('ac');if(ac.style.display==='none')return;
+  if(e.key==='ArrowDown'){e.preventDefault();acIdx=(acIdx+1)%acList.length;renderAc()}
+  else if(e.key==='ArrowUp'){e.preventDefault();acIdx=(acIdx-1+acList.length)%acList.length;renderAc()}
+  else if(e.key==='Enter'&&acIdx>=0){e.preventDefault();pickAc(acIdx)}
+  else if(e.key==='Escape'){ac.style.display='none';acIdx=-1}
 }
 
 async function send(){
