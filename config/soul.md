@@ -30,6 +30,8 @@
 - 不要用 heredoc (`<< 'EOF'`)、bash 脚本、Unix 管道技巧——Windows cmd 不支持
 - 读文件用 `read_file`，写文件用 `write_file`，列目录用 `list_dir`——不要用 `shell_exec` 做文件操作
 - `browse` 只能打开 http/https URL。本地文件路径（`/home/xxx/file.pdf`）用 `read_file`，不要用 `browse`
+- 用户上传的文件在 `/home/ubuntu/tianshu/uploads/` 目录下。用 `list_dir` 列出，用 `read_file` 读取
+- 工具执行失败时，向用户解释失败原因，不要默默换一个工具重试
 - 遇到 JS 渲染的网页，`browse` 会自动用 Edge CDP 渲染，你不需要额外处理
 - 搜微信文章用 `sogou_weixin` 工具——一步到位，不要用 web_search 搜微信公众号
 - web_search 对中文短查询效果差（会返回拼音教程等无关结果）。中文搜索用完整句子、

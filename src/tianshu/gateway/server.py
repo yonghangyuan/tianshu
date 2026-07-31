@@ -444,7 +444,8 @@ async def chat_upload(file: UploadFile = FFile(...), sender: str = "匿名"):
     # 广播为聊天消息
     global _chat_counter
     _chat_counter += 1
-    entry = {"id": _chat_counter, "from": sender, "content": f"📎 上传了文件: {safe_name}", "time": time.time()}
+    full_path = str(dest)
+    entry = {"id": _chat_counter, "from": sender, "content": f"📎 上传了文件: {safe_name} (路径: {full_path})", "time": time.time()}
     _chat_messages.append(entry)
     return {"ok": True, "filename": safe_name, "id": _chat_counter}
 
