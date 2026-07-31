@@ -13,8 +13,8 @@ import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Depends
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 import json
 
@@ -38,7 +38,10 @@ _ws_names: dict[WebSocket, str] = {}
 # ── 安全配置 ──
 import hashlib, os as _os
 SERVER_TOKEN = _os.environ.get("TIANSHU_TOKEN", "tianshu")
+LOGIN_PASSWORD = _os.environ.get("TIANSHU_LOGIN_PASSWORD", "")
 MAX_INPUT_LENGTH = 2000
+import secrets as _secrets
+_login_tokens: set[str] = set()  # 已登录 token 集合
 MAX_WS_MESSAGE_LENGTH = 1000
 _ws_rate_limit: dict[str, float] = {}  # IP → last message time
 
@@ -252,8 +255,78 @@ function addMsg(role,text){{const d=document.createElement('div');d.className='m
 </body></html>""")
 
 
+# ── 登录 ────────────────────────────────────────────────────
+
+@app.get("/login")
+async def login_page():
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>登录 · 天枢</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#0a0e27;color:#c9d1d9;display:flex;justify-content:center;align-items:center;height:100vh}
+.box{background:#131a35;padding:40px;border-radius:12px;border:1px solid #1e2a4a;width:360px;text-align:center}
+h1{color:#e2c860;margin-bottom:4px}
+.sub{color:#64748b;font-size:12px;margin-bottom:24px}
+input{width:100%;padding:10px;border-radius:6px;border:1px solid #1e2a4a;background:#0f1630;color:#c9d1d9;font-size:14px;margin-bottom:12px}
+button{width:100%;padding:10px;border-radius:6px;border:none;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+button:hover{background:#1d4ed8}
+.err{color:#ef4444;font-size:13px;margin-top:8px}
+</style></head>
+<body>
+<div class="box">
+  <h1>天枢 · 星群</h1>
+  <div class="sub">北斗七星第一星</div>
+  <input id="u" placeholder="用户名" value="">
+  <input id="p" type="password" placeholder="密码">
+  <button onclick="login()">登录</button>
+  <div class="err" id="e"></div>
+</div>
+<script>
+async function login(){
+  const u=document.getElementById('u').value.trim(),p=document.getElementById('p').value;
+  if(!u){document.getElementById('e').textContent='请输入用户名';return}
+  const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+  const d=await r.json();
+  if(d.ok){location.href='/chat'}else{document.getElementById('e').textContent=d.error||'登录失败'}
+}
+</script>
+</body></html>""")
+
+class LoginReq(BaseModel):
+    username: str
+    password: str = ""
+
+@app.post("/login")
+async def login(req: LoginReq):
+    if not req.username.strip():
+        return {"ok": False, "error": "用户名不能为空"}
+    if LOGIN_PASSWORD and req.password != LOGIN_PASSWORD:
+        return {"ok": False, "error": "密码错误"}
+    token = _secrets.token_hex(16)
+    _login_tokens.add(token)
+    resp = JSONResponse({"ok": True, "token": token})
+    resp.set_cookie("tianshu_token", token, httponly=True)
+    return resp
+
+def _check_auth(request: Request) -> bool:
+    """检查请求是否已登录。"""
+    if not LOGIN_PASSWORD:
+        return True
+    token = request.cookies.get("tianshu_token", "")
+    if token in _login_tokens:
+        return True
+    token = request.query_params.get("token", "")
+    return token in _login_tokens
+
+async def require_auth(request: Request):
+    if not _check_auth(request):
+        raise HTTPException(401, "请先登录")
+
 @app.get("/chat")
-async def chat_page():
+async def chat_page(request: Request):
+    if not _check_auth(request):
+        return RedirectResponse("/login")
     html = Path(__file__).parent / "chat.html"
     return HTMLResponse(html.read_text(encoding="utf-8"))
 
@@ -385,7 +458,7 @@ class ChatMsg(BaseModel):
     content: str = ""
 
 @app.post("/chat/send")
-async def chat_send(msg: ChatMsg):
+async def chat_send(msg: ChatMsg, _=Depends(require_auth)):
     global _chat_counter
     sender = msg.sender[:20]
     content = msg.content[:1000]
@@ -434,7 +507,7 @@ UPLOAD_DIR = _project_root / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 @app.post("/chat/upload")
-async def chat_upload(file: UploadFile = FFile(...), sender: str = "匿名"):
+async def chat_upload(file: UploadFile = FFile(...), sender: str = "匿名", _=Depends(require_auth)):
     """上传文件到群聊。"""
     safe_name = file.filename.replace("\\", "/").split("/")[-1][:100]  # 防路径遍历
     dest = UPLOAD_DIR / f"{int(time.time())}_{safe_name}"
@@ -450,7 +523,7 @@ async def chat_upload(file: UploadFile = FFile(...), sender: str = "匿名"):
     return {"ok": True, "filename": safe_name, "id": _chat_counter}
 
 @app.get("/chat/files")
-async def chat_files():
+async def chat_files(_=Depends(require_auth)):
     """列出可下载文件。"""
     files = []
     for f in sorted(UPLOAD_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
@@ -459,7 +532,7 @@ async def chat_files():
     return {"files": files}
 
 @app.get("/chat/download/{filename}")
-async def chat_download(filename: str):
+async def chat_download(filename: str, _=Depends(require_auth)):
     """下载文件。"""
     for f in UPLOAD_DIR.iterdir():
         if f.name.endswith("_" + filename) or f.name == filename:
@@ -467,7 +540,7 @@ async def chat_download(filename: str):
     raise HTTPException(404, "文件不存在")
 
 @app.get("/chat/messages")
-async def chat_messages(since: int = 0):
+async def chat_messages(since: int = 0, _=Depends(require_auth)):
     """返回 since 之后的新消息（轮询用）。"""
     recent = [m for m in _chat_messages if m["id"] > since]
     return {"messages": recent[-50:], "users": list(set(m["from"] for m in _chat_messages[-100:]))}
