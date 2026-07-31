@@ -942,12 +942,12 @@ class AgentCore:
         SAFE_TOOLS = {
             "remember_fact", "recall_memory", "get_model_status",
             "web_search", "search_papers",
-            "list_dir", "read_file", "browse",
+            "list_dir", "read_file", "browse", "intel_search",
         }
         # 写入工具
         WRITE_TOOLS = {
             "shell_exec", "download_pdf", "write_paper_notes",
-            "write_file", "download", "upload",
+            "write_file", "download", "upload", "intel_brief",
         }
 
         if name in SAFE_TOOLS:
