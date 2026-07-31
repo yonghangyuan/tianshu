@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     _core = AgentCore()
     _core.setup(registry=registry, routing=routing, system_prompt=system_prompt,
                 db_path=str(_project_root / "tianshu.db"), skill_discover=True)
+    await _init_chat_db()
     yield
 
 
@@ -362,6 +363,22 @@ async def _broadcast(msg: dict):
 _chat_messages: list[dict] = []  # {id, from, content, time}
 _chat_counter: int = 0
 MAX_CHAT_MSGS = 200  # 最多保留 200 条
+_chat_db_ready = False
+
+async def _init_chat_db():
+    """持久化聊天消息到 SQLite。"""
+    global _chat_db_ready, _chat_counter
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute("""CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY, sender TEXT, content TEXT, time REAL)""")
+        await db.commit()
+        async with db.execute("SELECT id,sender,content,time FROM chat_messages ORDER BY id DESC LIMIT ?", (MAX_CHAT_MSGS,)) as c:
+            for row in reversed(await c.fetchall()):
+                _chat_messages.append({"id":row[0],"from":row[1],"content":row[2],"time":row[3]})
+                if row[0]>_chat_counter: _chat_counter=row[0]
+    _chat_db_ready = True
 
 class ChatMsg(BaseModel):
     sender: str = "匿名"
@@ -379,6 +396,12 @@ async def chat_send(msg: ChatMsg):
     _chat_messages.append(entry)
     if len(_chat_messages) > MAX_CHAT_MSGS:
         _chat_messages.pop(0)
+    # 持久化
+    if _chat_db_ready:
+        import aiosqlite
+        async with aiosqlite.connect(str(_project_root / "tianshu.db")) as db:
+            await db.execute("INSERT INTO chat_messages VALUES(?,?,?,?)", (_chat_counter, sender, content, time.time()))
+            await db.commit()
 
     # @天枢 → Agent 回复
     agent_reply = None
