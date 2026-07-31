@@ -424,6 +424,47 @@ async def chat_send(msg: ChatMsg):
 
     return {"ok": True, "agent_reply": agent_reply}
 
+# ── 文件上传/下载 ──────────────────────────────────────────
+
+from fastapi import UploadFile, File as FFile
+from fastapi.responses import FileResponse
+import shutil
+
+UPLOAD_DIR = _project_root / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+@app.post("/chat/upload")
+async def chat_upload(file: UploadFile = FFile(...), sender: str = "匿名"):
+    """上传文件到群聊。"""
+    safe_name = file.filename.replace("\\", "/").split("/")[-1][:100]  # 防路径遍历
+    dest = UPLOAD_DIR / f"{int(time.time())}_{safe_name}"
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # 广播为聊天消息
+    global _chat_counter
+    _chat_counter += 1
+    entry = {"id": _chat_counter, "from": sender, "content": f"📎 上传了文件: {safe_name}", "time": time.time()}
+    _chat_messages.append(entry)
+    return {"ok": True, "filename": safe_name, "id": _chat_counter}
+
+@app.get("/chat/files")
+async def chat_files():
+    """列出可下载文件。"""
+    files = []
+    for f in sorted(UPLOAD_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
+        name = f.name.split("_", 1)[-1] if "_" in f.name else f.name
+        files.append({"name": name, "size": f.stat().st_size, "time": f.stat().st_mtime})
+    return {"files": files}
+
+@app.get("/chat/download/{filename}")
+async def chat_download(filename: str):
+    """下载文件。"""
+    for f in UPLOAD_DIR.iterdir():
+        if f.name.endswith("_" + filename) or f.name == filename:
+            return FileResponse(f, filename=filename)
+    raise HTTPException(404, "文件不存在")
+
 @app.get("/chat/messages")
 async def chat_messages(since: int = 0):
     """返回 since 之后的新消息（轮询用）。"""
