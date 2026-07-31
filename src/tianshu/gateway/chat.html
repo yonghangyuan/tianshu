@@ -52,18 +52,35 @@ button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#
 <script>
 // 轻量 Markdown 渲染（零依赖）
 function md2html(s){
-  return String(s)
+  s = String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/^### (.+)$/gm,'<h4>$1</h4>')
     .replace(/^## (.+)$/gm,'<h3>$1</h3>')
     .replace(/^# (.+)$/gm,'<h2>$1</h2>')
     .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
     .replace(/\*(.+?)\*/g,'<i>$1</i>')
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/`([^`]+)`/g,'<code style="background:#1e293b;padding:1px 4px;border-radius:3px">$1</code>')
     .replace(/^\- (.+)$/gm,'<li>$1</li>')
     .replace(/(<li>.*<\/li>)/s,function(m){return '<ul>'+m+'</ul>'})
-    .replace(/───+/g,'<hr>')
-    .replace(/\n/g,'<br>');
+    .replace(/───+/g,'<hr>');
+  // 表格: | a | b | → <table>
+  if(s.includes('|')){
+    let lines=s.split('\n'),table=[],inTable=false,result=[];
+    for(let l of lines){
+      if(l.match(/^\|.+\|$/)){
+        if(!inTable){inTable=true;table=['<table>'];}
+        let cells=l.split('|').filter(c=>c.trim());
+        let tag=table.length===2?'th':'td';
+        table.push('<tr>'+cells.map(c=>'<'+tag+'>'+c.trim()+'</'+tag+'>').join('')+'</tr>');
+      }else{
+        if(inTable){inTable=false;table.push('</table>');result.push(table.join(''));table=[];}
+        result.push(l);
+      }
+    }
+    if(inTable){table.push('</table>');result.push(table.join(''));}
+    s=result.join('\n');
+  }
+  return s.replace(/\n/g,'<br>');
 }
 
 const S = localStorage;
@@ -75,13 +92,14 @@ document.getElementById('ni').onchange = function(){name=this.value;S.setItem('t
 
 function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
-function addMsg(cls,from,tx,id){
+function addMsg(cls,from,tx,id,time){
   if(shown.has(id)) return; shown.add(id);
   const d=document.createElement('div');d.className='msg '+cls;
   const av=from==='天枢'?'枢':(from[0]||'?');
   const nameCls = from===name?' (你)':'';
   const body = from==='天枢' ? md2html(tx) : e(tx);
-  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+nameCls+'</div><div class="tx">'+body+'</div></div>';
+  const ts = time ? new Date(time*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : '';
+  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+nameCls+' <span style="color:#475569;font-size:10px">'+ts+'</span></div><div class="tx">'+body+'</div></div>';
   const chat=document.getElementById('chat');
   chat.appendChild(d); d.scrollIntoView({behavior:'smooth'});
   while(chat.children.length>100) chat.removeChild(chat.firstChild);
@@ -94,7 +112,7 @@ async function poll(){
     for(const m of data.messages||[]){
       if(m.id>lastId) lastId=m.id;
       const cls = m.from==='天枢'?'bot':'user';
-      addMsg(cls, m.from, m.content, m.id);
+      addMsg(cls, m.from, m.content, m.id, m.time);
     }
   }catch(e){}
 }

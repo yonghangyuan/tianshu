@@ -409,7 +409,13 @@ async def chat_send(msg: ChatMsg):
         user_input = content.replace("@天枢", "").replace("@tianshu", "").strip()
         if user_input:
             try:
-                resp = await _core.run(AgentRequest(input=user_input, task_type="conversation"))
+                # 注入最近 10 条聊天上下文
+                context = "\n".join(
+                    f"[{m['from']}]: {m['content'][:200]}"
+                    for m in _chat_messages[-10:] if m["from"] != "天枢"
+                )
+                full_input = f"群聊上下文:\n{context}\n\n用户 {sender} @你: {user_input}" if context else user_input
+                resp = await _core.run(AgentRequest(input=full_input, task_type="conversation"))
                 agent_reply = resp.content or "(空回复)"
                 _chat_counter += 1
                 _chat_messages.append({"id": _chat_counter, "from": "天枢", "content": agent_reply, "time": time.time()})
