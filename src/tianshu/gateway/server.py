@@ -357,6 +357,51 @@ async def _broadcast(msg: dict):
             _ws_clients.remove(c)
 
 
+# ── 群聊 ────────────────────────────────────────────────────
+
+_chat_messages: list[dict] = []  # {id, from, content, time}
+_chat_counter: int = 0
+MAX_CHAT_MSGS = 200  # 最多保留 200 条
+
+class ChatMsg(BaseModel):
+    sender: str = "匿名"
+    content: str = ""
+
+@app.post("/chat/send")
+async def chat_send(msg: ChatMsg):
+    global _chat_counter
+    sender = msg.sender[:20]
+    content = msg.content[:1000]
+
+    # 存储消息
+    _chat_counter += 1
+    entry = {"id": _chat_counter, "from": sender, "content": content, "time": time.time()}
+    _chat_messages.append(entry)
+    if len(_chat_messages) > MAX_CHAT_MSGS:
+        _chat_messages.pop(0)
+
+    # @天枢 → Agent 回复
+    agent_reply = None
+    if _core and ("@天枢" in content or "@tianshu" in content.lower()):
+        user_input = content.replace("@天枢", "").replace("@tianshu", "").strip()
+        if user_input:
+            try:
+                resp = await _core.run(AgentRequest(input=user_input, task_type="conversation"))
+                agent_reply = resp.content or "(空回复)"
+                _chat_counter += 1
+                _chat_messages.append({"id": _chat_counter, "from": "天枢", "content": agent_reply, "time": time.time()})
+            except Exception as e:
+                agent_reply = f"Error: {e}"
+
+    return {"ok": True, "agent_reply": agent_reply}
+
+@app.get("/chat/messages")
+async def chat_messages(since: int = 0):
+    """返回 since 之后的新消息（轮询用）。"""
+    recent = [m for m in _chat_messages if m["id"] > since]
+    return {"messages": recent[-50:], "users": list(set(m["from"] for m in _chat_messages[-100:]))}
+
+
 # ── CLI 入口 ──────────────────────────────────────────────────────
 
 def main():

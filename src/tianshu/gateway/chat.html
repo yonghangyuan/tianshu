@@ -52,57 +52,58 @@ button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#
 <script>
 const S = localStorage;
 let name = S.getItem('ts_name')||'';
+let lastId = 0;
+let shown = new Set();
 document.getElementById('ni').value = name;
 document.getElementById('ni').onchange = function(){name=this.value;S.setItem('ts_name',name)};
+
+function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+function addMsg(cls,from,tx,id){
+  if(shown.has(id)) return; shown.add(id);
+  const d=document.createElement('div');d.className='msg '+cls;
+  const av=from==='天枢'?'枢':(from[0]||'?');
+  const nameCls = from===name?' (你)':'';
+  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+nameCls+'</div><div class="tx">'+e(tx)+'</div></div>';
+  const chat=document.getElementById('chat');
+  chat.appendChild(d); d.scrollIntoView({behavior:'smooth'});
+  while(chat.children.length>100) chat.removeChild(chat.firstChild);
+}
+
+async function poll(){
+  try{
+    const resp = await fetch('/chat/messages?since='+lastId);
+    const data = await resp.json();
+    for(const m of data.messages||[]){
+      if(m.id>lastId) lastId=m.id;
+      const cls = m.from==='天枢'?'bot':'user';
+      addMsg(cls, m.from, m.content, m.id);
+    }
+  }catch(e){}
+}
+setInterval(poll, 1500);
 
 async function send(){
   const mi=document.getElementById('mi'), tx=mi.value.trim();
   if(!tx)return;
   const n=document.getElementById('ni').value.trim()||'匿名';
   name=n; S.setItem('ts_name',name);
-  msg('user',n,tx); mi.value='';
+  mi.value='';
 
-  if(tx.includes('@天枢')||tx.toLowerCase().includes('@tianshu')){
-    const input = tx.replace(/@天枢|@tianshu/gi,'').trim();
-    if(!input) return;
-    const div = addMsg('bot','天枢','');
-    try{
-      const resp = await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:input})});
-      const data = await resp.json();
-      if(data.error){div.innerHTML='<div class="nm">天枢</div><div class="tx">Error: '+e(data.error)+'</div>';}
-      else {
-        let toolsHtml = '';
-        if(data.tool_calls&&data.tool_calls.length){
-          toolsHtml = data.tool_calls.map(t=>'<div class="tool"><div class="dot '+(t.success?'ok':'fail')+'"></div> '+t.name+'</div>').join('');
-        }
-        div.innerHTML='<div class="nm">天枢</div><div class="tx">'+e(data.content||'(空)')+'</div>'+toolsHtml;
-      }
-    }catch(err){div.innerHTML='<div class="nm">天枢</div><div class="tx">网络错误</div>';}
-  }
+  try{
+    await fetch('/chat/send',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sender:name,content:tx})
+    });
+  }catch(e){}
+  poll(); // 立刻刷新
 }
 
-function msg(cls,from,tx){
-  const d=document.createElement('div');d.className='msg '+cls;
-  const av=from==='天枢'?'枢':(from[0]||'?');
-  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+'</div><div class="tx">'+e(tx)+'</div></div>';
-  document.getElementById('chat').appendChild(d);
-  d.scrollIntoView({behavior:'smooth'});
-}
-function addMsg(cls,from,tx){
-  const d=document.createElement('div');d.className='msg '+cls;
-  const av=from==='天枢'?'枢':(from[0]||'?');
-  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+'</div></div>';
-  document.getElementById('chat').appendChild(d);
-  d.scrollIntoView({behavior:'smooth'});
-  return d;
-}
-function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-
-// 加载状态
 fetch('/health').then(r=>r.json()).then(d=>{
   document.getElementById('model').textContent='模型: '+d.models;
   document.getElementById('skills').textContent='工具: '+d.skills;
 });
+poll();
 </script>
 </body>
 </html>
