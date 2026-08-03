@@ -70,7 +70,6 @@ routing:
 
     - task_types: [simple_query, conversation]
       prefer:
-        - deepseek/v4-flash
         - deepseek/v4-pro
         - deepseek/chat
         - moonshot/v1-8k

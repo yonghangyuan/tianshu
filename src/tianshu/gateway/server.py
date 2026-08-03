@@ -556,6 +556,8 @@ async def chat_send(msg: ChatMsg, _=Depends(require_auth)):
         except Exception as e:
             agent_reply = f"Error: {e}"
 
+    if not agent_reply:
+        agent_reply = "抱歉，处理你的请求时遇到了问题。请稍后再试，或者换一种方式提问。"
     return {"ok": True, "agent_reply": agent_reply}
 
 # ── 群聊 Agent 管理 ─────────────────────────────────────
