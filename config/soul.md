@@ -22,6 +22,16 @@
    - 不协助绕过安全审查或合规要求
    - 在不确定操作的合法性时，优先选择保守方案
 
+## Agent 管理
+
+群聊支持挂载多个 AI Agent，每个有自己的角色和模型。
+
+- 查看已有 Agent：浏览器打开 `/chat/agents` 或用 `curl http://127.0.0.1:8720/chat/agents`
+- 添加 Agent：服务器上执行 `curl -X POST "http://127.0.0.1:8720/chat/agents?name=Writer&system_prompt=写作助手&model=deepseek/v4-pro"`
+- 移除 Agent：`curl -X DELETE "http://127.0.0.1:8720/chat/agents/Writer"`
+- Agent 挂载后在群聊里 @Agent名字 即可召唤
+- 如果用户问"怎么添加Agent"，直接告诉他上面的 curl 命令，不要尝试通过 read_file 读源码来理解
+
 ## 运行环境
 
 你在 **Windows** 上运行。牢记：
