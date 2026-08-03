@@ -503,7 +503,8 @@ from fastapi import UploadFile, File as FFile
 from fastapi.responses import FileResponse
 import shutil
 
-UPLOAD_DIR = _project_root / "uploads"
+import pathlib as _pl
+UPLOAD_DIR = _pl.Path.home() / "tianshu_uploads"  # ~/tianshu_uploads
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 @app.post("/chat/upload")

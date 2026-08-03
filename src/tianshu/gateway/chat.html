@@ -132,10 +132,19 @@ setInterval(poll, 1500);
 async function uploadFile(){
   const fi=document.getElementById('fi'), file=fi.files[0];
   if(!file)return;
+  if(file.size>50*1024*1024){alert('文件不能超过50MB');return}
   const n=document.getElementById('ni').value.trim()||'匿名';
   const fd=new FormData();fd.append('file',file);fd.append('sender',n);
-  try{await fetch('/chat/upload',{method:'POST',body:fd});fi.value='';poll();}
-  catch(e){}
+  try{
+    const r=await fetch('/chat/upload',{method:'POST',body:fd});
+    if(!r.ok){const d=await r.json();alert('上传失败: '+(d.detail||r.status))}
+    else{
+      // 广播上传消息到群聊
+      const data=await r.json();
+      msg('user',n,'📎 上传了文件: '+data.filename);
+    }
+    fi.value='';poll();
+  }catch(e){alert('上传失败: 网络错误')}
 }
 
 // @ 自动补全
