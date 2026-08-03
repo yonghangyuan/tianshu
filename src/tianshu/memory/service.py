@@ -101,7 +101,7 @@ class MemoryService:
         await self._init()
         # 清理 FTS5 特殊字符
         safe_query = query
-        for ch in '="*.-:()[]{}^~\\/\'><|&;!?,':
+        for ch in '="*.-:()[]{}^~\\/\'><|&;!?,@#$%':
             safe_query = safe_query.replace(ch, ' ')
         safe_query = ' '.join(safe_query.split())  # 合并多余空格
         if not safe_query.strip():
