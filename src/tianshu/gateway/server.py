@@ -440,7 +440,8 @@ _chat_messages: list[dict] = []  # {id, from, content, time}
 _chat_counter: int = 0
 MAX_CHAT_MSGS = 200  # 最多保留 200 条
 _chat_db_ready = False
-_chat_users: set[str] = {"天枢"}  # 所有发过言的人（持久追踪）
+_chat_users: set[str] = {"天枢"}  # 所有发过言的人
+_chat_agents: dict[str, dict] = {}  # 群聊级 Agent: name → {system_prompt, model}
 
 async def _init_chat_db():
     """持久化聊天消息到 SQLite。"""
@@ -480,30 +481,57 @@ async def chat_send(msg: ChatMsg, _=Depends(require_auth)):
             await db.execute("INSERT INTO chat_messages VALUES(?,?,?,?)", (_chat_counter, sender, content, time.time()))
             await db.commit()
 
-    # @天枢 → Agent 回复
+    # @Agent 检测（天枢 + 群聊自定义 Agent）
+    import re as _re
     agent_reply = None
-    if _core and ("@天枢" in content or "@tianshu" in content.lower()):
-        user_input = content.replace("@天枢", "").replace("@tianshu", "").strip()
-        if user_input:
-            try:
-                # 注入最近 10 条聊天上下文
-                context = "\n".join(
-                    f"[{m['from']}]: {m['content'][:200]}"
-                    for m in _chat_messages[-10:] if m["from"] != "天枢"
-                )
-                full_input = f"群聊上下文:\n{context}\n\n用户 {sender} @你: {user_input}" if context else user_input
-                resp = await _core.run(AgentRequest(input=full_input, task_type="conversation"))
-                agent_reply = resp.content or "(空回复)"
-                tools_used = [t.get("name","?") for t in resp.tool_calls] if resp.tool_calls else []
-                _chat_counter += 1
-                _chat_messages.append({
-                    "id": _chat_counter, "from": "天枢", "content": agent_reply,
-                    "time": time.time(), "tools": tools_used, "audit_id": resp.decision_id,
-                })
-            except Exception as e:
-                agent_reply = f"Error: {e}"
+    mentioned = _re.findall(r'@(\S+)', content)
+    for agent_name in mentioned:
+        user_input = content.replace(f'@{agent_name}', '').strip()
+        if not user_input or not _core: continue
+
+        # 群聊上下文
+        context = "\n".join(f"[{m['from']}]: {m['content'][:200]}" for m in _chat_messages[-10:] if m["from"] != agent_name)
+        full_input = f"群聊上下文:\n{context}\n\n用户 {sender}: {user_input}" if context else user_input
+
+        # 查找 Agent 定义
+        is_default = agent_name in ("天枢", "tianshu")
+        agent_cfg = _chat_agents.get(agent_name, {})
+        if not is_default and not agent_cfg: continue  # 不存在的 Agent，跳过
+
+        if agent_cfg.get("system_prompt"):
+            full_input = f"{agent_cfg['system_prompt']}\n\n{full_input}"
+
+        try:
+            req = AgentRequest(input=full_input, task_type="conversation")
+            if agent_cfg.get("model"): req.model_override = agent_cfg["model"]
+            resp = await _core.run(req)
+            agent_reply = resp.content or "(空回复)"
+            tools_used = [t.get("name","?") for t in resp.tool_calls] if resp.tool_calls else []
+            _chat_counter += 1
+            _chat_messages.append({"id": _chat_counter, "from": agent_name, "content": agent_reply,
+                "time": time.time(), "tools": tools_used, "audit_id": resp.decision_id})
+        except Exception as e:
+            agent_reply = f"Error: {e}"
 
     return {"ok": True, "agent_reply": agent_reply}
+
+# ── 群聊 Agent 管理 ─────────────────────────────────────
+
+@app.post("/chat/agents")
+async def chat_add_agent(name: str = "", system_prompt: str = "", model: str = "", _=Depends(require_auth)):
+    if not name or name in ("天枢","tianshu"): raise HTTPException(400, "name required, cannot be 天枢")
+    _chat_agents[name] = {"system_prompt": system_prompt, "model": model}
+    _chat_users.add(name)
+    return {"ok": True, "agents": list(_chat_agents.keys())}
+
+@app.delete("/chat/agents/{name}")
+async def chat_remove_agent(name: str, _=Depends(require_auth)):
+    _chat_agents.pop(name, None)
+    return {"ok": True, "agents": list(_chat_agents.keys())}
+
+@app.get("/chat/agents")
+async def chat_list_agents(_=Depends(require_auth)):
+    return {"agents": [{"name": k, **v} for k, v in _chat_agents.items()]}
 
 # ── 文件上传/下载 ──────────────────────────────────────────
 
