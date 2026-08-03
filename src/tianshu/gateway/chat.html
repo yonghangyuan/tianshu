@@ -156,11 +156,19 @@ async function poll(){
     const resp = await fetch('/chat/messages?since='+lastId);
     const data = await resp.json();
     if(data.users) window._chatUsers=data.users;
-    // 更新在线成员
+    // 更新在线成员（增量，不清空已有）
+    const seen=new Set();
     const ml=document.getElementById('members');
-    ml.innerHTML='<h3>在线 ('+((data.users||[]).length+1)+')</h3>';
-    ml.innerHTML+='<div class=member><span class=dot></span> 天枢 (AI)</div>';
-    (data.users||[]).forEach(u=>{if(u!=='天枢')ml.innerHTML+='<div class=member><span class=dot></span> '+e(u)+'</div>'});
+    // 保留已有的成员元素，只增不删
+    let html='<h3>在线 ('+((data.users||[]).length+1)+')</h3>';
+    html+='<div class=member id=m-天枢><span class=dot></span> 天枢 (AI)</div>';
+    seen.add('天枢');
+    (data.users||[]).forEach(u=>{
+      if(!seen.has(u)){seen.add(u);
+        html+='<div class=member id=m-'+u.replace(/[^a-zA-Z0-9一-龥]/g,'')+'><span class=dot></span> '+e(u)+'</div>';
+      }
+    });
+    ml.innerHTML=html;
     // 更新 Agent 面板
     if(data.agents){
       const al=document.getElementById('agent-list');

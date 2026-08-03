@@ -437,6 +437,7 @@ _chat_messages: list[dict] = []  # {id, from, content, time}
 _chat_counter: int = 0
 MAX_CHAT_MSGS = 200  # 最多保留 200 条
 _chat_db_ready = False
+_chat_users: set[str] = {"天枢"}  # 所有发过言的人（持久追踪）
 
 async def _init_chat_db():
     """持久化聊天消息到 SQLite。"""
@@ -465,11 +466,11 @@ async def chat_send(msg: ChatMsg, _=Depends(require_auth)):
 
     # 存储消息
     _chat_counter += 1
+    _chat_users.add(sender)
     entry = {"id": _chat_counter, "from": sender, "content": content, "time": time.time()}
     _chat_messages.append(entry)
     if len(_chat_messages) > MAX_CHAT_MSGS:
         _chat_messages.pop(0)
-    # 持久化
     if _chat_db_ready:
         import aiosqlite
         async with aiosqlite.connect(str(_project_root / "tianshu.db")) as db:
@@ -568,7 +569,7 @@ async def chat_messages(since: int = 0, _=Depends(require_auth)):
     """返回 since 之后的新消息（轮询用）。"""
     recent = [m for m in _chat_messages if m["id"] > since]
     # 在线用户 + Agent 状态
-    users = list(set(m["from"] for m in _chat_messages[-100:]))
+    users = sorted(_chat_users)
     agents = [
         {"name": "天枢", "status": "working" if _core and _core._last_reasoning else "idle",
          "tools": _core._tool_registry.count if _core and _core._tool_registry else 0,
