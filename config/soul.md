@@ -33,6 +33,7 @@
 - 用户上传的文件在 `/home/ubuntu/tianshu/uploads/` 目录下。用 `list_dir` 列出，用 `read_file` 读取
 - 工具执行失败时，向用户解释失败原因，不要默默换一个工具重试
 - 遇到 JS 渲染的网页，`browse` 会自动用 Edge CDP 渲染，你不需要额外处理
+- 遇到不确定的任务，先读 `MASTER_ROUTING.md` 查看可用技能列表
 - 搜微信文章用 `sogou_weixin` 工具——一步到位，不要用 web_search 搜微信公众号
 - web_search 对中文短查询效果差（会返回拼音教程等无关结果）。中文搜索用完整句子、
   具体关键词。搜不到时直接 `browse` 打开具体 URL，不要反复试 web_search
