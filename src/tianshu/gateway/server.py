@@ -626,10 +626,10 @@ async def create_task(req: TaskCreate, _=Depends(require_auth)):
     now = time.time()
     db_path = _project_root / "tianshu.db"
     async with aiosqlite.connect(str(db_path)) as db:
-        await db.execute("INSERT INTO tasks VALUES(NULL,?,?,?,?,?,?)",
+        c = await db.execute("INSERT INTO tasks VALUES(NULL,?,?,?,?,?,?)",
             (req.title, req.description, "todo", req.created_by, now, now))
         await db.commit()
-        tid = db.last_insert_rowid
+        tid = c.lastrowid
     return {"ok": True, "task": {"id": tid, "title": req.title, "description": req.description,
             "status": "todo", "created_by": req.created_by, "created_at": now, "updated_at": now}}
 
@@ -727,11 +727,11 @@ async def task_send_msg(task_id: int, msg: TaskMsg, _=Depends(require_auth)):
     now = time.time()
     async with aiosqlite.connect(str(db_path)) as db:
         # 存用户消息
-        await db.execute("INSERT INTO task_messages VALUES(NULL,?,?,?,?)",
+        c = await db.execute("INSERT INTO task_messages VALUES(NULL,?,?,?,?)",
             (task_id, msg.sender, msg.content, now))
         await db.execute("UPDATE tasks SET updated_at=? WHERE id=?", (now, task_id))
         await db.commit()
-        mid = db.last_insert_rowid
+        mid = c.lastrowid
 
     agent_reply = None
     # 检测 @Agent
