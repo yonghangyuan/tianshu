@@ -527,6 +527,25 @@ async def chat_upload(file: UploadFile = FFile(...), sender: str = "匿名", _=D
     _chat_messages.append(entry)
     return {"ok": True, "filename": safe_name, "id": _chat_counter}
 
+@app.post("/chat/share")
+async def chat_share(path: str = "", _=Depends(require_auth)):
+    """将服务器本地文件复制到上传目录，在群聊中可下载。"""
+    import shutil as _shutil
+    src = _pl.Path(path).expanduser()
+    if not src.exists():
+        raise HTTPException(404, f"文件不存在: {path}")
+    if src.is_dir():
+        raise HTTPException(400, "不能分享目录")
+    safe_name = src.name[:100]
+    dest = UPLOAD_DIR / f"{int(time.time())}_{safe_name}"
+    _shutil.copy2(src, dest)
+    # 广播到聊天
+    global _chat_counter
+    _chat_counter += 1
+    entry = {"id": _chat_counter, "from": "天枢", "content": f"📎 已分享文件: {safe_name} ({src.stat().st_size:,} bytes)", "time": time.time()}
+    _chat_messages.append(entry)
+    return {"ok": True, "filename": safe_name, "size": src.stat().st_size}
+
 @app.get("/chat/files")
 async def chat_files(_=Depends(require_auth)):
     """列出可下载文件。"""

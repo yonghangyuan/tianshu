@@ -64,7 +64,42 @@ class FileOpsSkill(BaseSkill):
                 handler=self._list_dir,
                 permission_level=0,  # SAFE
             ),
+            SkillTool(
+                name="share_file",
+                description="Copy a server file to the web chat's download directory, making it available for other users to download. Use this when a user asks to share or upload a file from the server to the chat.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Absolute path of the file to share"},
+                    },
+                    "required": ["path"],
+                },
+                handler=self._share_file,
+                permission_level=2,  # WRITE
+            ),
         ]
+
+    async def _share_file(self, path: str, **kwargs) -> str:
+        """复制文件到上传目录，使其在群聊中可下载。"""
+        import shutil as _shutil, httpx
+        p = Path(path).expanduser().resolve()
+        if not p.exists():
+            return f"❌ 文件不存在: {p}"
+        if p.is_dir():
+            return f"❌ 不能分享目录: {p}"
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.post(
+                    "http://127.0.0.1:8720/chat/share",
+                    params={"path": str(p)},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return f"✅ 已分享到群聊: {data['filename']} ({data['size']:,} bytes)"
+                else:
+                    return f"❌ 分享失败: HTTP {resp.status_code}"
+        except Exception as e:
+            return f"❌ 分享失败: {e}"
 
     # ── Implementations ─────────────────────────────────────────────
 
