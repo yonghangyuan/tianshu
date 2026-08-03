@@ -490,8 +490,12 @@ async def chat_send(msg: ChatMsg, _=Depends(require_auth)):
                 full_input = f"群聊上下文:\n{context}\n\n用户 {sender} @你: {user_input}" if context else user_input
                 resp = await _core.run(AgentRequest(input=full_input, task_type="conversation"))
                 agent_reply = resp.content or "(空回复)"
+                tools_used = [t.get("name","?") for t in resp.tool_calls] if resp.tool_calls else []
                 _chat_counter += 1
-                _chat_messages.append({"id": _chat_counter, "from": "天枢", "content": agent_reply, "time": time.time()})
+                _chat_messages.append({
+                    "id": _chat_counter, "from": "天枢", "content": agent_reply,
+                    "time": time.time(), "tools": tools_used, "audit_id": resp.decision_id,
+                })
             except Exception as e:
                 agent_reply = f"Error: {e}"
 

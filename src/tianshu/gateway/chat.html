@@ -32,6 +32,19 @@ main{flex:1;display:flex;flex-direction:column}
 #bar input{padding:8px;border-radius:6px;border:1px solid #1e2a4a;background:#131a35;color:#c9d1d9;font-size:13px}
 #ni{width:70px}#mi{flex:1}
 button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;font-weight:600}
+  .dash{width:280px;background:#0f1630;border-left:1px solid #1e2a4a;padding:12px;overflow-y:auto;font-size:12px}
+  .dash h3{color:#94a3b8;font-size:13px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #1e2a4a}
+  .dash h3:first-child{margin-top:0}
+  .agent-card{background:#131a35;border-radius:6px;padding:8px;margin-bottom:6px;border:1px solid #1e2a4a}
+  .agent-card .name{font-weight:600;color:#e2c860;margin-bottom:2px}
+  .agent-card .status{font-size:11px}
+  .agent-card .status.idle{color:#64748b}.agent-card .status.working{color:#4ade80}.agent-card .status.error{color:#ef4444}
+  .audit-entry{background:#131a35;border-radius:4px;padding:6px;margin-bottom:4px;font-size:11px;border-left:2px solid #2563eb}
+  .audit-entry .id{color:#60a5fa}.audit-entry .tool-name{color:#94a3b8}
+  .flow-step{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px}
+  .flow-step .arrow{color:#475569}
+  .flow-step .node{background:#1e3a5f;padding:2px 6px;border-radius:3px;color:#60a5fa}
+  .flow-step .tool-name{color:#94a3b8}
 </style>
 </head>
 <body>
@@ -52,6 +65,18 @@ button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#
     <input type="file" id="fi" style="display:none" onchange="uploadFile()">
     <button onclick="document.getElementById('fi').click()" style="background:#334155">📎</button>
     <button onclick="send()">发送</button>
+  </div>
+</main>
+<aside class="dash" id="dash">
+  <h3>Agent 节点</h3>
+  <div id="agent-list">
+    <div class="agent-card"><div class="name">天枢</div><div class="status idle">◉ 待命中</div></div>
+  </div>
+  <h3>工具调用</h3>
+  <div id="tool-log"><div style="color:#475569">暂无活动</div></div>
+  <h3>审计追踪</h3>
+  <div id="audit-log"><div style="color:#475569">等待决策...</div></div>
+</aside>
   </div>
 </main>
 <script>
@@ -97,6 +122,17 @@ document.getElementById('ni').onchange = function(){name=this.value;S.setItem('t
 
 function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
+function addToolLog(name,ok){
+  const tl=document.getElementById('tool-log');
+  const d=document.createElement('div');d.className='flow-step';
+  d.innerHTML='<span class=arrow>→</span><span class=node>'+(ok?'✓':'✗')+'</span><span class=tool-name>'+name+'</span>';
+  tl.insertBefore(d,tl.firstChild);
+  if(tl.children.length>20)tl.removeChild(tl.lastChild);
+  // 更新Agent状态
+  const al=document.getElementById('agent-list');
+  al.innerHTML='<div class=agent-card><div class=name>天枢</div><div class="status working">● 工作中 ('+name+')</div></div>';
+}
+
 function addMsg(cls,from,tx,id,time){
   if(shown.has(id)) return; shown.add(id);
   const d=document.createElement('div');d.className='msg '+cls;
@@ -124,6 +160,17 @@ async function poll(){
       if(m.id>lastId) lastId=m.id;
       const cls = m.from==='天枢'?'bot':'user';
       addMsg(cls, m.from, m.content, m.id, m.time);
+      // 仪表盘: 工具日志 + 审计
+      if(m.from==='天枢' && m.tools && m.tools.length){
+        m.tools.forEach(t=>addToolLog(t,true));
+      }
+      if(m.from==='天枢' && m.audit_id){
+        const al=document.getElementById('audit-log');
+        const d=document.createElement('div');d.className='audit-entry';
+        d.innerHTML='<span class=id>'+m.audit_id.slice(-6)+'</span> '+new Date(m.time*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'<br><span class=tool-name>'+(m.tools||[]).length+' tools</span>';
+        al.insertBefore(d,al.firstChild);
+        if(al.children.length>10)al.removeChild(al.lastChild);
+      }
     }
   }catch(e){}
 }
@@ -193,6 +240,25 @@ fetch('/health').then(r=>r.json()).then(d=>{
   document.getElementById('model').textContent='模型: '+d.models;
   document.getElementById('skills').textContent='工具: '+d.skills;
 });
+// 定时刷新仪表盘
+async function refreshDash(){
+  try{
+    // 审计记录
+    const ar=await fetch('/audit?limit=5');const ad=await ar.json();
+    const al=document.getElementById('audit-log');
+    if(ad.records&&ad.records.length){
+      al.innerHTML=ad.records.map(r=>{
+        const id=r.decision_id||'?';const m=r.llm_model||'?';
+        const tools=(r.input_data||[]).length||r.tool_count||0;
+        return '<div class=audit-entry><span class=id>'+id.slice(-6)+'</span> '+m+'<br><span class=tool-name>'+tools+' tools</span></div>';
+      }).join('');
+    }
+    // Agent状态
+    document.getElementById('agent-list').innerHTML=
+      '<div class=agent-card><div class=name>天枢</div><div class="status '+(ad.records&&ad.records.length?'working':'idle')+'">'+(ad.records&&ad.records.length?'● 工作中':'◉ 待命中')+'</div></div>';
+  }catch(e){}
+}
+setInterval(refreshDash,5000);refreshDash();
 poll();
 </script>
 </body>
