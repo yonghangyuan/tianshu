@@ -140,8 +140,8 @@ function addMsg(cls,from,tx,id,time){
   const nameCls = from===name?' (你)':'';
   let body = from==='天枢' ? md2html(tx) : e(tx);
   // 文件消息 → 渲染为下载链接
-  if(tx.includes('📎 上传了文件:')){
-    const fn=tx.split('📎 上传了文件:')[1].trim();
+  if(tx.includes('📎 上传了文件:')||tx.includes('📎 已分享文件:')){
+    const fn=(tx.split('📎 上传了文件:')[1]||tx.split('📎 已分享文件:')[1]||'').split('(')[0].trim();
     body='📎 <a href="/chat/download/'+fn+'" style="color:#60a5fa">'+fn+'</a> (点击下载)';
   }
   const ts = time ? new Date(time*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : '';
