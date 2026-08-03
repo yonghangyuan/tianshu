@@ -64,10 +64,10 @@ async def lifespan(app: FastAPI):
     _core = AgentCore()
     _core.setup(registry=registry, routing=routing, system_prompt=system_prompt,
                 db_path=str(_project_root / "tianshu.db"), skill_discover=True)
+    from tianshu.core.db import get_db as _get_db
+    await _get_db(str(_project_root / "tianshu.db")).init()
     await _init_chat_db()
-    await _init_task_db()
-    global _task_db_ready
-    _task_db_ready = True
+    global _task_db_ready; _task_db_ready = True
     yield
 
 
@@ -444,18 +444,22 @@ _chat_users: set[str] = {"天枢"}  # 所有发过言的人
 _chat_agents: dict[str, dict] = {}  # 群聊级 Agent: name → {system_prompt, model}
 
 async def _init_chat_db():
-    """持久化聊天消息到 SQLite。"""
-    global _chat_db_ready, _chat_counter
-    import aiosqlite
-    db_path = _project_root / "tianshu.db"
-    async with aiosqlite.connect(str(db_path)) as db:
-        await db.execute("""CREATE TABLE IF NOT EXISTS chat_messages (
-            id INTEGER PRIMARY KEY, sender TEXT, content TEXT, time REAL)""")
-        await db.commit()
-        async with db.execute("SELECT id,sender,content,time FROM chat_messages ORDER BY id DESC LIMIT ?", (MAX_CHAT_MSGS,)) as c:
-            for row in reversed(await c.fetchall()):
-                _chat_messages.append({"id":row[0],"from":row[1],"content":row[2],"time":row[3]})
-                if row[0]>_chat_counter: _chat_counter=row[0]
+    """从统一数据库加载聊天历史 + 群聊 Agent。"""
+    global _chat_db_ready, _chat_counter, _chat_agents
+    from tianshu.core.db import get_db
+    db = get_db(str(_project_root / "tianshu.db"))
+    await db.init()
+    conn = await db.connect()
+    # 加载聊天历史
+    c = await conn.execute("SELECT id,sender,content,time FROM chat_messages ORDER BY id DESC LIMIT ?", (MAX_CHAT_MSGS,))
+    async for row in c:
+        _chat_messages.insert(0, {"id":row[0],"from":row[1],"content":row[2],"time":row[3]})
+        if row[0]>_chat_counter: _chat_counter=row[0]
+    # 加载持久化 Agent
+    c2 = await conn.execute("SELECT name,system_prompt,model FROM chat_agents")
+    async for row in c2:
+        _chat_agents[row[0]] = {"system_prompt": row[1], "model": row[2]}
+        _chat_users.add(row[0])
     _chat_db_ready = True
 
 class ChatMsg(BaseModel):
@@ -522,11 +526,23 @@ async def chat_add_agent(name: str = "", system_prompt: str = "", model: str = "
     if not name or name in ("天枢","tianshu"): raise HTTPException(400, "name required, cannot be 天枢")
     _chat_agents[name] = {"system_prompt": system_prompt, "model": model}
     _chat_users.add(name)
+    # 持久化
+    from tianshu.core.db import get_db
+    db = get_db(str(_project_root / "tianshu.db"))
+    conn = await db.connect()
+    await conn.execute("INSERT OR REPLACE INTO chat_agents VALUES(?,?,?,?,?)",
+        (name, system_prompt, model, "", time.time()))
+    await conn.commit()
     return {"ok": True, "agents": list(_chat_agents.keys())}
 
 @app.delete("/chat/agents/{name}")
 async def chat_remove_agent(name: str, _=Depends(require_auth)):
     _chat_agents.pop(name, None)
+    from tianshu.core.db import get_db
+    db = get_db(str(_project_root / "tianshu.db"))
+    conn = await db.connect()
+    await conn.execute("DELETE FROM chat_agents WHERE name=?", (name,))
+    await conn.commit()
     return {"ok": True, "agents": list(_chat_agents.keys())}
 
 @app.get("/chat/agents")
@@ -632,20 +648,6 @@ class TaskAgentCreate(BaseModel):
     model: str = ""
     created_by: str = "匿名"
 
-async def _init_task_db():
-    import aiosqlite
-    db_path = _project_root / "tianshu.db"
-    async with aiosqlite.connect(str(db_path)) as db:
-        await db.execute("""CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT DEFAULT 'todo',
-            created_by TEXT, created_at REAL, updated_at REAL)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS task_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER, sender TEXT,
-            content TEXT, time REAL)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS task_agents (
-            name TEXT, task_id INTEGER, system_prompt TEXT, model TEXT,
-            created_by TEXT, created_at REAL, PRIMARY KEY(task_id, name))""")
-        await db.commit()
 _task_db_ready = False
 
 @app.post("/tasks")
