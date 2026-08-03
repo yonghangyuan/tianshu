@@ -66,14 +66,14 @@ class CodeAssistSkill(BaseSkill):
 
     # ── 工具实现 ─────────────────────────────────────────────────────
 
-    async def _write_file(self, path: str, content: str) -> str:
+    async def _write_file(self, path: str, content: str, **kwargs) -> str:
         """写入文件。"""
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"已写入: {p} ({len(content)} 字符)"
 
-    async def _write_docx(self, path: str, title: str, content: str) -> str:
+    async def _write_docx(self, path: str, title: str, content: str, **kwargs) -> str:
         """Generate a .docx file from Markdown content."""
         from docx import Document
         from docx.shared import Pt, Inches, RGBColor
@@ -140,7 +140,7 @@ class CodeAssistSkill(BaseSkill):
             else:
                 paragraph.add_run(part)
 
-    async def _list_project(self, path: str = ".") -> str:
+    async def _list_project(self, path: str = ".", **kwargs) -> str:
         """列出项目结构。"""
         p = Path(path)
         if not p.exists():

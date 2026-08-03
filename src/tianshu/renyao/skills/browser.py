@@ -154,7 +154,7 @@ class BrowserSkill(BaseSkill):
 
     # ── 搜狗微信搜索 ──────────────────────────────────────────
 
-    async def _sogou_weixin_search(self, query: str, count: int = 10) -> str:
+    async def _sogou_weixin_search(self, query: str, count: int = 10, **kwargs) -> str:
         """搜索微信公众号文章，返回标题+摘要+真实链接。
 
         搜狗微信返回内部跳转链接，此方法用 Bing site:mp.weixin.qq.com

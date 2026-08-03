@@ -75,7 +75,7 @@ class PaperRadarSkill(BaseSkill):
 
     # ── 工具实现 ─────────────────────────────────────────────────────
 
-    async def _search(self, query: str, max_results: int = 5) -> str:
+    async def _search(self, query: str, max_results: int = 5, **kwargs) -> str:
         """搜索 arXiv。复用 paper-radar 的 search 模块。"""
         # 尝试直接调 arxiv API
         import httpx
@@ -118,7 +118,7 @@ class PaperRadarSkill(BaseSkill):
             lines.append(f"  {i}. [{r['id']}] {r['title'][:80]} ({r['year']}) — {r['authors'][:60]}")
         return "\n".join(lines)
 
-    async def _download(self, arxiv_id: str) -> str:
+    async def _download(self, arxiv_id: str, **kwargs) -> str:
         """下载 PDF。"""
         pdf_dir = Path("F:/趋势追踪/研究论文/_pdfs")
         pdf_dir.mkdir(parents=True, exist_ok=True)

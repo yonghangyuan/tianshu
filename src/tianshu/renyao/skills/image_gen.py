@@ -24,7 +24,7 @@ class ImageGenSkill(BaseSkill):
             handler=self._generate,
         )]
 
-    async def _generate(self, description: str, style: str = "diagram") -> str:
+    async def _generate(self, description: str, style: str = "diagram", **kwargs) -> str:
         styles = {
             "diagram": "clean technical diagram, Chinese labels, dark theme, blue accents, professional",
             "illustration": "detailed illustration, Chinese calligraphy style, ink wash, elegant",

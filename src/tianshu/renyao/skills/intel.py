@@ -64,7 +64,7 @@ class IntelSkill(BaseSkill):
 
     async def _intel_search(
         self, query: str, sources: str = "weixin,web",
-        days: int = 7, max_results: int = 5,
+        days: int = 7, max_results: int = 5, **kwargs,
     ) -> str:
         src_list = [s.strip() for s in sources.split(",")]
         all_items: list[dict] = []
@@ -139,7 +139,7 @@ class IntelSkill(BaseSkill):
 
     async def _intel_brief(
         self, topic: str, items_json: str,
-        output_dir: str = "F:/reports",
+        output_dir: str = "F:/reports", **kwargs,
     ) -> str:
         try:
             items = json.loads(items_json)
