@@ -548,7 +548,14 @@ async def chat_download(filename: str, _=Depends(require_auth)):
 async def chat_messages(since: int = 0, _=Depends(require_auth)):
     """返回 since 之后的新消息（轮询用）。"""
     recent = [m for m in _chat_messages if m["id"] > since]
-    return {"messages": recent[-50:], "users": list(set(m["from"] for m in _chat_messages[-100:]))}
+    # 在线用户 + Agent 状态
+    users = list(set(m["from"] for m in _chat_messages[-100:]))
+    agents = [
+        {"name": "天枢", "status": "working" if _core and _core._last_reasoning else "idle",
+         "tools": _core._tool_registry.count if _core and _core._tool_registry else 0,
+         "audit_count": 0}
+    ]
+    return {"messages": recent[-50:], "users": users, "agents": agents}
 
 
 # ── CLI 入口 ──────────────────────────────────────────────────────
