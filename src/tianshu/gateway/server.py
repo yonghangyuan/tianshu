@@ -598,6 +598,12 @@ class TaskMsg(BaseModel):
     sender: str = "匿名"
     content: str = ""
 
+class TaskAgentCreate(BaseModel):
+    name: str
+    system_prompt: str = ""
+    model: str = ""
+    created_by: str = "匿名"
+
 async def _init_task_db():
     import aiosqlite
     db_path = _project_root / "tianshu.db"
@@ -675,20 +681,6 @@ async def update_task(task_id: int, req: TaskUpdate, _=Depends(require_auth)):
         await db.commit()
     return {"ok": True}
 
-@app.post("/tasks/{task_id}/messages")
-async def task_send_msg(task_id: int, msg: TaskMsg, _=Depends(require_auth)):
-    import aiosqlite
-    db_path = _project_root / "tianshu.db"
-    now = time.time()
-    async with aiosqlite.connect(str(db_path)) as db:
-        await db.execute("INSERT INTO task_messages VALUES(NULL,?,?,?,?)",
-            (task_id, msg.sender, msg.content, now))
-        await db.execute("UPDATE tasks SET updated_at=? WHERE id=?", (now, task_id))
-        await db.commit()
-        mid = db.last_insert_rowid
-    return {"ok": True, "message": {"id": mid, "task_id": task_id, "from": msg.sender,
-            "content": msg.content, "time": now}}
-
 @app.get("/tasks/{task_id}/messages")
 async def task_get_msgs(task_id: int, since: int = 0, _=Depends(require_auth)):
     import aiosqlite
@@ -699,6 +691,75 @@ async def task_get_msgs(task_id: int, since: int = 0, _=Depends(require_auth)):
         rows = await c.fetchall()
     return {"messages": [{"id": r[0], "task_id": r[1], "from": r[2],
             "content": r[3], "time": r[4]} for r in rows]}
+
+# ── P1: Task Agent 管理 ─────────────────────────────────────
+
+@app.post("/tasks/{task_id}/agents")
+async def task_add_agent(task_id: int, req: TaskAgentCreate, _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    now = time.time()
+    async with aiosqlite.connect(str(db_path)) as db:
+        # 检查任务存在
+        c = await db.execute("SELECT id FROM tasks WHERE id=?", (task_id,))
+        if not await c.fetchone(): raise HTTPException(404, "任务不存在")
+        await db.execute("INSERT OR REPLACE INTO task_agents VALUES(?,?,?,?,?,?)",
+            (req.name, task_id, req.system_prompt, req.model, req.created_by, now))
+        await db.commit()
+    return {"ok": True, "agent": {"name": req.name, "task_id": task_id,
+            "system_prompt": req.system_prompt, "model": req.model, "created_by": req.created_by}}
+
+@app.delete("/tasks/{task_id}/agents/{name}")
+async def task_remove_agent(task_id: int, name: str, _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute("DELETE FROM task_agents WHERE task_id=? AND name=?", (task_id, name))
+        await db.commit()
+    return {"ok": True}
+
+# ── @Agent 自动回复 ────────────────────────────────────────
+
+@app.post("/tasks/{task_id}/messages")
+async def task_send_msg(task_id: int, msg: TaskMsg, _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    now = time.time()
+    async with aiosqlite.connect(str(db_path)) as db:
+        # 存用户消息
+        await db.execute("INSERT INTO task_messages VALUES(NULL,?,?,?,?)",
+            (task_id, msg.sender, msg.content, now))
+        await db.execute("UPDATE tasks SET updated_at=? WHERE id=?", (now, task_id))
+        await db.commit()
+        mid = db.last_insert_rowid
+
+    agent_reply = None
+    # 检测 @Agent
+    import re
+    mentioned = re.findall(r'@(\S+)', msg.content)
+    if mentioned and _core:
+        for agent_name in mentioned:
+            async with aiosqlite.connect(str(db_path)) as db:
+                c = await db.execute("SELECT * FROM task_agents WHERE task_id=? AND name=?",
+                    (task_id, agent_name))
+                row = await c.fetchone()
+            if row:
+                sp = row[2] or f"你是任务'{agent_name}'的智能助手。"
+                try:
+                    resp = await _core.run(AgentRequest(
+                        input=f"{sp}\n\n用户 {msg.sender}: {msg.content.replace('@'+agent_name, '').strip()}",
+                        task_type="conversation"))
+                    agent_reply = resp.content or "(空)"
+                    now2 = time.time()
+                    async with aiosqlite.connect(str(db_path)) as db2:
+                        await db2.execute("INSERT INTO task_messages VALUES(NULL,?,?,?,?)",
+                            (task_id, agent_name, agent_reply, now2))
+                        await db2.commit()
+                except Exception as e:
+                    agent_reply = f"Error: {e}"
+
+    return {"ok": True, "message": {"id": mid, "task_id": task_id, "from": msg.sender,
+            "content": msg.content, "time": now}, "agent_reply": agent_reply}
 
 # ── CLI 入口 ──────────────────────────────────────────────────────
 
