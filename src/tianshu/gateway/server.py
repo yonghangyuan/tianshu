@@ -207,10 +207,13 @@ async def run_stream(req: RunRequest):
 @app.get("/")
 async def dashboard():
     """首页 —— 导航入口。"""
-    agent_list = "".join(
-        f'<tr><td>@{name}</td><td>{cfg.get(\"system_prompt\",\"\")[:60]}</td><td>{cfg.get(\"model\",\"默认\")}</td></tr>'
-        for name, cfg in _chat_agents.items()
-    )
+    rows = []
+    for name, cfg in _chat_agents.items():
+        sp = cfg.get("system_prompt", "")[:60]
+        md = cfg.get("model", "默认")
+        rows.append(f'<tr><td>@{name}</td><td>{sp}</td><td>{md}</td></tr>')
+    agent_list = "".join(rows)
+    agent_count = len(_chat_agents)
     return HTMLResponse(f"""<!DOCTYPE html>
 <html lang=zh><head><meta charset=UTF-8><meta name=viewport content=\"width=device-width,initial-scale=1\">
 <title>天枢 · 星群</title>
@@ -233,7 +236,7 @@ th{{color:#64748b}}
 <h1>天枢 · 星群</h1>
 <div class=sub>北斗七星第一星</div>
 <a class=chat href=/chat>💬 进入群聊</a>
-<a class=agents href=/chat/agents>🤖 查看 Agent ({len(_chat_agents)})</a>
+<a class=agents href=/chat/agents>🤖 查看 Agent ({agent_count})</a>
 <div style=\"margin-top:16px;text-align:left\">
 <h3 style=color:#94a3b8;font-size:13px;margin-bottom:8px>已挂载 Agent</h3>
 <table>{agent_list if agent_list else '<tr><td colspan=3 style=color:#475569>暂无——用 curl POST /chat/agents 添加</td></tr>'}</table>
@@ -583,12 +586,15 @@ async def chat_remove_agent(name: str, _=Depends(require_auth)):
 
 @app.get("/chat/agents")
 async def chat_list_agents(_=Depends(require_auth)):
-    # 浏览器请求 → HTML；API 请求 → JSON
-    cards = "".join(
-        f'<div class=card><b>@{name}</b><br><span style=color:#64748b>{cfg.get("system_prompt","")[:80]}</span><br><span style=color:#475569;font-size:12px>模型: {cfg.get("model","默认")}</span></div>'
-        for name, cfg in _chat_agents.items()
-    )
-    html = f"""<!DOCTYPE html><html lang=zh><head><meta charset=UTF-8><meta name=viewport content=\"width=device-width,initial-scale=1\">
+    """浏览器 → HTML / API → JSON"""
+    cards = []
+    for name, cfg in _chat_agents.items():
+        sp = cfg.get("system_prompt", "")[:80]
+        md = cfg.get("model", "默认")
+        cards.append(f'<div class=card><b>@{name}</b><br><span style=color:#64748b>{sp}</span><br><span style=color:#475569;font-size:12px>模型: {md}</span></div>')
+    cards_html = "".join(cards)
+    count = len(_chat_agents)
+    html = f"""<!DOCTYPE html><html lang=zh><head><meta charset=UTF-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>星群 Agent</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -597,8 +603,8 @@ h1{{color:#e2c860;font-size:18px;margin-bottom:16px}}
 .card{{background:#131a35;border:1px solid #1e2a4a;border-radius:8px;padding:12px;margin-bottom:8px}}
 a{{color:#60a5fa}}
 </style></head><body>
-<h1>星群 Agent ({len(_chat_agents)})</h1>
-{cards if cards else '<p style=color:#475569>暂无 Agent。<br>添加: <code>curl -X POST "http://175.27.157.139:8720/chat/agents?name=Writer&system_prompt=写作助手"</code></p>'}
+<h1>星群 Agent ({count})</h1>
+{cards_html if cards_html else '<p style=color:#475569>暂无 Agent。<br>添加: <code>curl -X POST "http://175.27.157.139:8720/chat/agents?name=Writer&system_prompt=写作助手"</code></p>'}
 <p style=margin-top:16px><a href=/>← 返回首页</a></p>
 </body></html>"""
     return HTMLResponse(html)
