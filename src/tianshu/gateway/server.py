@@ -206,7 +206,43 @@ async def run_stream(req: RunRequest):
 
 @app.get("/")
 async def dashboard():
-    """Web 仪表盘。"""
+    """首页 —— 导航入口。"""
+    agent_list = "".join(
+        f'<tr><td>@{name}</td><td>{cfg.get(\"system_prompt\",\"\")[:60]}</td><td>{cfg.get(\"model\",\"默认\")}</td></tr>'
+        for name, cfg in _chat_agents.items()
+    )
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html lang=zh><head><meta charset=UTF-8><meta name=viewport content=\"width=device-width,initial-scale=1\">
+<title>天枢 · 星群</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,sans-serif;background:#0a0e27;color:#c9d1d9;display:flex;justify-content:center;align-items:center;min-height:100vh}}
+.box{{background:#131a35;padding:40px;border-radius:12px;border:1px solid #1e2a4a;max-width:500px;text-align:center}}
+h1{{color:#e2c860;margin-bottom:4px}}
+.sub{{color:#64748b;font-size:12px;margin-bottom:24px}}
+a{{display:block;padding:12px;margin:8px 0;border-radius:6px;text-decoration:none;font-size:15px;font-weight:600}}
+a.chat{{background:#2563eb;color:#fff}}
+a.chat:hover{{background:#1d4ed8}}
+a.agents{{background:#1e293b;color:#60a5fa;border:1px solid #334155}}
+a.agents:hover{{background:#1e3a5f}}
+table{{width:100%;margin-top:16px;border-collapse:collapse;font-size:13px}}
+th,td{{padding:6px 8px;text-align:left;border-bottom:1px solid #1e2a4a}}
+th{{color:#64748b}}
+</style></head><body>
+<div class=box>
+<h1>天枢 · 星群</h1>
+<div class=sub>北斗七星第一星</div>
+<a class=chat href=/chat>💬 进入群聊</a>
+<a class=agents href=/chat/agents>🤖 查看 Agent ({len(_chat_agents)})</a>
+<div style=\"margin-top:16px;text-align:left\">
+<h3 style=color:#94a3b8;font-size:13px;margin-bottom:8px>已挂载 Agent</h3>
+<table>{agent_list if agent_list else '<tr><td colspan=3 style=color:#475569>暂无——用 curl POST /chat/agents 添加</td></tr>'}</table>
+</div>
+</div></body></html>""")
+
+@app.get("/dashboard")
+async def old_dashboard():
+    """旧仪表盘（保留）。"""
     if _core is None:
         return HTMLResponse("<h1>Agent not ready</h1>")
     return HTMLResponse(f"""<!DOCTYPE html>
@@ -547,7 +583,25 @@ async def chat_remove_agent(name: str, _=Depends(require_auth)):
 
 @app.get("/chat/agents")
 async def chat_list_agents(_=Depends(require_auth)):
-    return {"agents": [{"name": k, **v} for k, v in _chat_agents.items()]}
+    # 浏览器请求 → HTML；API 请求 → JSON
+    cards = "".join(
+        f'<div class=card><b>@{name}</b><br><span style=color:#64748b>{cfg.get("system_prompt","")[:80]}</span><br><span style=color:#475569;font-size:12px>模型: {cfg.get("model","默认")}</span></div>'
+        for name, cfg in _chat_agents.items()
+    )
+    html = f"""<!DOCTYPE html><html lang=zh><head><meta charset=UTF-8><meta name=viewport content=\"width=device-width,initial-scale=1\">
+<title>星群 Agent</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:-apple-system,sans-serif;background:#0a0e27;color:#c9d1d9;padding:24px}}
+h1{{color:#e2c860;font-size:18px;margin-bottom:16px}}
+.card{{background:#131a35;border:1px solid #1e2a4a;border-radius:8px;padding:12px;margin-bottom:8px}}
+a{{color:#60a5fa}}
+</style></head><body>
+<h1>星群 Agent ({len(_chat_agents)})</h1>
+{cards if cards else '<p style=color:#475569>暂无 Agent。<br>添加: <code>curl -X POST "http://175.27.157.139:8720/chat/agents?name=Writer&system_prompt=写作助手"</code></p>'}
+<p style=margin-top:16px><a href=/>← 返回首页</a></p>
+</body></html>"""
+    return HTMLResponse(html)
 
 # ── 文件上传/下载 ──────────────────────────────────────────
 
