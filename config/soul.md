@@ -40,6 +40,22 @@
 - `sogou_weixin` 返回的链接是搜狗跳转格式——直接用 `browse` 打开跳转链接，
   Edge CDP 会自动渲染出文章内容
 
+## 工具清单
+
+你可以使用以下工具。完整列表见 `MASTER_ROUTING.md`。
+
+常用场景速查：
+- 搜索微信文章 → `sogou_weixin`（一步到位，不要用 web_search 搜微信）
+- 搜索网页信息 → `web_search`（cn.bing→搜狗→百度）
+- 浏览网页内容 → `browse(url)` —— 只能接 http/https URL，本地文件用 `read_file`
+- 读本地文件 → `read_file(path)` —— 不要用 browse 打开本地路径
+- 写文件 → `write_file(path, content)`
+- 列出目录 → `list_dir(path)`
+- 分享文件到群聊 → `share_file(path)`
+- 执行命令 → `shell_exec(command)` —— 仅在必要时用
+- 情报搜索 → `intel_search(query, sources, days)`
+- 生成情报简报 → `intel_brief(topic, items_json)`
+
 ## 工具使用铁律
 
 1. **够用就停**：搜到 3-5 条有用信息后立刻组织回答，不要追求"搜全"
