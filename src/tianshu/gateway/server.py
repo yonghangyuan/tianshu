@@ -65,6 +65,9 @@ async def lifespan(app: FastAPI):
     _core.setup(registry=registry, routing=routing, system_prompt=system_prompt,
                 db_path=str(_project_root / "tianshu.db"), skill_discover=True)
     await _init_chat_db()
+    await _init_task_db()
+    global _task_db_ready
+    _task_db_ready = True
     yield
 
 
@@ -577,6 +580,125 @@ async def chat_messages(since: int = 0, _=Depends(require_auth)):
     ]
     return {"messages": recent[-50:], "users": users, "agents": agents}
 
+
+# ── 任务空间 ──────────────────────────────────────────────────
+
+class TaskCreate(BaseModel):
+    title: str
+    description: str = ""
+    created_by: str = "匿名"
+
+class TaskUpdate(BaseModel):
+    status: str = ""
+    title: str = ""
+    description: str = ""
+    updated_by: str = ""
+
+class TaskMsg(BaseModel):
+    sender: str = "匿名"
+    content: str = ""
+
+async def _init_task_db():
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute("""CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT DEFAULT 'todo',
+            created_by TEXT, created_at REAL, updated_at REAL)""")
+        await db.execute("""CREATE TABLE IF NOT EXISTS task_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER, sender TEXT,
+            content TEXT, time REAL)""")
+        await db.execute("""CREATE TABLE IF NOT EXISTS task_agents (
+            name TEXT, task_id INTEGER, system_prompt TEXT, model TEXT,
+            created_by TEXT, created_at REAL, PRIMARY KEY(task_id, name))""")
+        await db.commit()
+_task_db_ready = False
+
+@app.post("/tasks")
+async def create_task(req: TaskCreate, _=Depends(require_auth)):
+    import aiosqlite
+    now = time.time()
+    db_path = _project_root / "tianshu.db"
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute("INSERT INTO tasks VALUES(NULL,?,?,?,?,?,?)",
+            (req.title, req.description, "todo", req.created_by, now, now))
+        await db.commit()
+        tid = db.last_insert_rowid
+    return {"ok": True, "task": {"id": tid, "title": req.title, "description": req.description,
+            "status": "todo", "created_by": req.created_by, "created_at": now, "updated_at": now}}
+
+@app.get("/tasks")
+async def list_tasks(status: str = "all", _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    sql = "SELECT * FROM tasks"
+    params = []
+    if status and status != "all" and status != "archived":
+        sql += " WHERE status != 'archived'"
+    elif status == "archived":
+        sql += " WHERE status = 'archived'"
+    sql += " ORDER BY updated_at DESC LIMIT 50"
+    async with aiosqlite.connect(str(db_path)) as db:
+        c = await db.execute(sql, params)
+        rows = await c.fetchall()
+    tasks = [{"id": r[0], "title": r[1], "description": r[2], "status": r[3],
+              "created_by": r[4], "created_at": r[5], "updated_at": r[6]} for r in rows]
+    return {"tasks": tasks}
+
+@app.get("/tasks/{task_id}")
+async def get_task(task_id: int, _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    async with aiosqlite.connect(str(db_path)) as db:
+        c = await db.execute("SELECT * FROM tasks WHERE id=?", (task_id,))
+        row = await c.fetchone()
+        if not row: raise HTTPException(404, "任务不存在")
+        c2 = await db.execute("SELECT * FROM task_agents WHERE task_id=?", (task_id,))
+        agents = [{"name": r[0], "task_id": r[1], "system_prompt": r[2], "model": r[3],
+                    "created_by": r[4], "created_at": r[5]} for r in await c2.fetchall()]
+    return {"task": {"id": row[0], "title": row[1], "description": row[2], "status": row[3],
+            "created_by": row[4], "created_at": row[5], "updated_at": row[6]}, "agents": agents}
+
+@app.patch("/tasks/{task_id}")
+async def update_task(task_id: int, req: TaskUpdate, _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    async with aiosqlite.connect(str(db_path)) as db:
+        c = await db.execute("SELECT * FROM tasks WHERE id=?", (task_id,))
+        if not await c.fetchone(): raise HTTPException(404, "任务不存在")
+        if req.status:
+            await db.execute("UPDATE tasks SET status=?, updated_at=? WHERE id=?",
+                (req.status, time.time(), task_id))
+        if req.title:
+            await db.execute("UPDATE tasks SET title=?, updated_at=? WHERE id=?",
+                (req.title, time.time(), task_id))
+        await db.commit()
+    return {"ok": True}
+
+@app.post("/tasks/{task_id}/messages")
+async def task_send_msg(task_id: int, msg: TaskMsg, _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    now = time.time()
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute("INSERT INTO task_messages VALUES(NULL,?,?,?,?)",
+            (task_id, msg.sender, msg.content, now))
+        await db.execute("UPDATE tasks SET updated_at=? WHERE id=?", (now, task_id))
+        await db.commit()
+        mid = db.last_insert_rowid
+    return {"ok": True, "message": {"id": mid, "task_id": task_id, "from": msg.sender,
+            "content": msg.content, "time": now}}
+
+@app.get("/tasks/{task_id}/messages")
+async def task_get_msgs(task_id: int, since: int = 0, _=Depends(require_auth)):
+    import aiosqlite
+    db_path = _project_root / "tianshu.db"
+    async with aiosqlite.connect(str(db_path)) as db:
+        c = await db.execute("SELECT * FROM task_messages WHERE task_id=? AND id>? ORDER BY id LIMIT 100",
+            (task_id, since))
+        rows = await c.fetchall()
+    return {"messages": [{"id": r[0], "task_id": r[1], "from": r[2],
+            "content": r[3], "time": r[4]} for r in rows]}
 
 # ── CLI 入口 ──────────────────────────────────────────────────────
 
