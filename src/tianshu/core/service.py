@@ -744,10 +744,18 @@ class AgentCore:
                     output = await self._execute_tool(name, args)
                     success = True
                     result_text = str(output)
-                except Exception as e:
-                    output = str(e)
+                except FileNotFoundError as e:
                     success = False
-                    result_text = f"Error: {e}"
+                    result_text = f"📁 文件未找到: {e}"
+                except PermissionError as e:
+                    success = False
+                    result_text = f"🔒 权限不足: {e}"
+                except TimeoutError as e:
+                    success = False
+                    result_text = f"⏱️ 工具超时: {e}"
+                except Exception as e:
+                    success = False
+                    result_text = f"❌ 工具执行失败 ({name}): {type(e).__name__}: {e}"
 
                 elapsed_tool = int((time.time() - t0_tool) * 1000)
                 _s_tool(name, result_text[:60], elapsed_tool)

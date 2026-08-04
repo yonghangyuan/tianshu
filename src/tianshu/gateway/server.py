@@ -387,6 +387,34 @@ async def models():
     }
 
 
+@app.post("/admin/reload")
+async def admin_reload(request: Request):
+    """热加载配置：重新读取 providers.yaml + skills，无需重启服务。"""
+    if not _check_auth(request):
+        raise HTTPException(401, detail="未登录")
+    global _core
+    config_dir = _project_root / "config"
+    providers_yaml = config_dir / "providers.yaml"
+    soul_md = config_dir / "soul.md"
+
+    try:
+        user_keys = load_user_keys()
+        registry = load_providers(providers_yaml, extra_keys=user_keys)
+        routing = load_routing_config(providers_yaml)
+        system_prompt = soul_md.read_text(encoding="utf-8") if soul_md.exists() else ""
+
+        _core = AgentCore()
+        _core.setup(registry=registry, routing=routing, system_prompt=system_prompt,
+                    db_path=str(_project_root / "tianshu.db"), skill_discover=True)
+        return {
+            "ok": True,
+            "models": _core.model_count,
+            "tools": _core._tool_registry.count if _core._tool_registry else 0,
+        }
+    except Exception as e:
+        raise HTTPException(500, detail=f"重载失败: {e}")
+
+
 # ── WebSocket 群聊 ──────────────────────────────────────────────
 
 @app.websocket("/ws")
@@ -864,6 +892,7 @@ def main():
     args = parser.parse_args()
     print(f"天枢 API Server → http://{args.host}:{args.port}")
     print(f"  /health  /run  /tools  /audit  /memory  /skills  /models")
+    print(f"  /chat   /admin/reload  /ws")
     uvicorn.run(app, host=args.host, port=args.port)
 
 

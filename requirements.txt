@@ -1,3 +1,9 @@
+# 天枢 Tianshu — 核心依赖
+# 同步自 pyproject.toml，以 pyproject.toml 为准
 httpx>=0.27.0
 pyyaml>=6.0
 aiosqlite>=0.20.0
+rich>=13.0
+fastapi>=0.100
+uvicorn>=0.20
+python-multipart>=0.0.6

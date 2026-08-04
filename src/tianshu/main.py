@@ -303,14 +303,19 @@ def _main_sync() -> None:
     soul_md = config_dir / "soul.md"
 
     if not providers_yaml.exists():
-        _rich_console.print("[red]错误: config/providers.yaml 不存在[/red]")
+        _rich_console.print("[red]❌ config/providers.yaml 未找到[/red]")
+        _rich_console.print("[dim]请从 config/providers.yaml.example 复制并填入 API Key[/dim]")
         return
 
     user_keys = load_user_keys()
     try:
         registry = load_providers(providers_yaml, extra_keys=user_keys)
+    except FileNotFoundError as e:
+        _rich_console.print(f"[red]❌ 配置文件缺失: {e}[/red]")
+        return
     except Exception as e:
-        _rich_console.print(f"[red]加载模型配置失败: {e}[/red]")
+        _rich_console.print(f"[red]❌ 加载模型配置失败: {e}[/red]")
+        _rich_console.print("[dim]请检查 config/providers.yaml 格式是否正确（YAML 缩进需对齐）[/dim]")
         return
 
     routing_config = load_routing_config(providers_yaml)
@@ -551,8 +556,21 @@ def _main_sync() -> None:
 
         try:
             asyncio.run(_run_turn())
+        except KeyboardInterrupt:
+            _rich_console.print("\n  [dim]已取消[/dim]")
         except Exception as e:
-            _rich_console.print(f"[bold red]错误:[/bold red] {e}")
+            msg = str(e)
+            # 分类提示
+            if "connect" in msg.lower() or "timeout" in msg.lower() or "refused" in msg.lower():
+                _rich_console.print(f"[bold red]🌐 网络不通[/bold red] — 请检查网络或代理设置")
+            elif "401" in msg or "403" in msg:
+                _rich_console.print(f"[bold red]🔑 鉴权失败[/bold red] — 请用 /setup 重新配置 API Key")
+            elif "429" in msg or "rate" in msg.lower():
+                _rich_console.print(f"[bold red]⏳ 请求太频繁[/bold red] — 稍等几秒再试")
+            elif "not set up" in msg.lower():
+                _rich_console.print(f"[bold red]⚙️ 未初始化[/bold red] — 请检查 config/providers.yaml")
+            else:
+                _rich_console.print(f"[bold red]错误:[/bold red] {msg[:300]}")
 
         _rich_console.print()
         session_store.save(ctx, title=user_input[:50])
