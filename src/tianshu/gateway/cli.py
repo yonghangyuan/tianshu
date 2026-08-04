@@ -21,6 +21,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from tianshu import __version__
+
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -263,7 +265,7 @@ def render_splash_rich(
     table.add_column(style="dim")
 
     now = time.strftime("%Y-%m-%d %H:%M")
-    table.add_row("天枢", f"v0.1.0  ·  {now}")
+    table.add_row("天枢", f"v{__version__}  ·  {now}")
 
     if models:
         model_strs = []

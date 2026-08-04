@@ -71,7 +71,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="天枢 Agent API", version="0.1.0", lifespan=lifespan)
+from tianshu import __version__
+app = FastAPI(title="天枢 Agent API", version=__version__, lifespan=lifespan)
 
 
 # ── 数据模型 ──────────────────────────────────────────────────────

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from tianshu import __version__
+
 import shutil
 import sys
 from datetime import datetime
@@ -112,7 +114,7 @@ def _info_panel(
     lines.append(
         indent
         + c(TC.TITLE, "天枢 Agent")
-        + c(TC.DIM, "  v0.1.0  ·  ")
+        + c(TC.DIM, f"  v{__version__}  ·  ")
         + c(TC.VALUE, now)
     )
 
@@ -244,7 +246,7 @@ def render_plain(models_count: int = 0) -> str:
         "  |  北斗七星第一星 · 中国本土自主 AI 框架        |",
         "  +----------------------------------------------+",
         "",
-        f"  v0.1.0  |  {models_count} 个模型已加载",
+        f"  v{__version__}  |  {models_count} 个模型已加载",
         f"  --models 模型  --audit 审计  --setup 配置Key",
         "",
     ])

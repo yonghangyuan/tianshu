@@ -39,7 +39,39 @@ if sys.platform == "win32":
 
 
 def _print_cmd_help() -> None:
-    """Rich 版帮助——由 CommandRegistry 驱动。"""
+    """精简帮助——只显示最常用的命令。"""
+    from rich.table import Table as _Table
+    from rich import box as _box
+
+    _rich_console.print()
+    t = _Table(box=_box.SIMPLE, show_header=False, padding=(0, 2))
+    t.add_column(style="bold cyan", width=18)
+    t.add_column(style="dim")
+
+    shortcuts = [
+        ("/help, /h", "帮助"),
+        ("/models", "切换模型"),
+        ("/setup", "配置 API Key"),
+        ("/audit", "审计记录"),
+        ("/orchestrate", "多 Agent 编排"),
+        ("/plan", "生成计划(不执行)"),
+        ("/agents", "查看活跃子 Agent"),
+        ("/session", "会话管理"),
+        ("/memory", "记忆管理"),
+        ("/tools", "查看工具"),
+        ("/mode, Tab", "切换 normal/auto/plan"),
+        ("/clear", "清屏"),
+        ("exit, q", "退出"),
+    ]
+    for key, desc in shortcuts:
+        t.add_row(key, desc)
+    _rich_console.print(t)
+    _rich_console.print("  [dim]输入 /help all 查看完整命令列表[/dim]")
+    _rich_console.print()
+
+
+def _print_full_help() -> None:
+    """完整命令列表。"""
     from rich.table import Table as _Table
     from rich import box as _box
     from tianshu.core.commands import get_registry
@@ -457,8 +489,11 @@ def _main_sync() -> None:
         elif user_input in ("skills", "/skills"):
             _show_skills(core.skills.loader, core.skills.observer)
             continue
-        elif user_input in ("help", "/help"):
-            _print_cmd_help()
+        elif user_input in ("help", "/help", "h", "/h"):
+            if user_input.endswith(" all") or user_input == "/help all":
+                _print_full_help()
+            else:
+                _print_cmd_help()
             continue
         elif user_input in ("think", "/think"):
             rc = core.last_reasoning
@@ -530,20 +565,23 @@ def _main_sync() -> None:
             continue
         elif user_input.startswith("/orchestrate ") or user_input.startswith("orchestrate "):
             task = user_input.split(maxsplit=1)[1] if " " in user_input else user_input
-            _rich_console.print(f"[bold cyan]多 Agent 编排模式[/bold cyan]")
+            _rich_console.print(f"\n[bold cyan]═══ 多 Agent 编排 ═══[/bold cyan]")
             plan = asyncio.run(core.orchestrator.plan(task))
-            _rich_console.print(plan.summary())
-            _rich_console.print("\n[dim]正在执行...[/dim]")
-            # 简单串行执行
-            for step in plan.steps:
+            _rich_console.print(f"[dim]{plan.summary()}[/dim]")
+            _rich_console.print()
+            # 串行执行，每步显示进度
+            total = len(plan.steps)
+            for i, step in enumerate(plan.steps):
+                status = f"[{i+1}/{total}]" if total > 1 else ""
+                _rich_console.print(f"  [bold yellow]⏳[/bold yellow] {status} [cyan]{step.agent_name}[/cyan]: {step.task[:60]}...")
                 agent = asyncio.run(core.orchestrator.create_agent(
                     step.agent_name, step.tools_allowed, "deepseek-v4-flash",
                 ))
                 msg = asyncio.run(core.orchestrator.dispatch(agent, step.task, deps=step.depends_on))
                 result = msg.payload.get("result", str(msg.intent)[:200]) if msg.payload else str(msg.intent)
-                _rich_console.print(f"  [{step.agent_name}] {result[:150]}")
+                _rich_console.print(f"  [bold green]✓[/bold green] {status} [cyan]{step.agent_name}[/cyan] 完成 → {result[:120]}")
                 asyncio.run(core.orchestrator.destroy(agent))
-            _rich_console.print("\n[dim]编排完成[/dim]")
+            _rich_console.print(f"\n[bold green]═══ 编排完成 ({total} 步) ═══[/bold green]\n")
             continue
         elif user_input in ("agents", "/agents"):
             _rich_console.print(core.orchestrator.status_summary())
@@ -589,14 +627,19 @@ def _main_sync() -> None:
             # 分类提示
             if "connect" in msg.lower() or "timeout" in msg.lower() or "refused" in msg.lower():
                 _rich_console.print(f"[bold red]🌐 网络不通[/bold red] — 请检查网络或代理设置")
+                _rich_console.print(f"[dim]→ 试试: ping api.deepseek.com[/dim]")
             elif "401" in msg or "403" in msg:
-                _rich_console.print(f"[bold red]🔑 鉴权失败[/bold red] — 请用 /setup 重新配置 API Key")
+                _rich_console.print(f"[bold red]🔑 鉴权失败[/bold red] — API Key 无效或过期")
+                _rich_console.print(f"[dim]→ 试试: /setup 重新配置[/dim]")
             elif "429" in msg or "rate" in msg.lower():
                 _rich_console.print(f"[bold red]⏳ 请求太频繁[/bold red] — 稍等几秒再试")
+                _rich_console.print(f"[dim]→ 等待 5-10 秒后重试[/dim]")
             elif "not set up" in msg.lower():
                 _rich_console.print(f"[bold red]⚙️ 未初始化[/bold red] — 请检查 config/providers.yaml")
+                _rich_console.print(f"[dim]→ 试试: /setup 启动配置向导[/dim]")
             else:
                 _rich_console.print(f"[bold red]错误:[/bold red] {msg[:300]}")
+                _rich_console.print(f"[dim]→ 输入 /help 查看可用命令[/dim]")
 
         _rich_console.print()
         session_store.save(ctx, title=user_input[:50])
