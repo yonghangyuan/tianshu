@@ -199,6 +199,12 @@ class Orchestrator:
                     )
             except Exception as e:
                 agent.status = "error"
+                # Memory hook: 记录子 Agent 失败
+                if self.core and hasattr(self.core, 'memory'):
+                    await self.core.memory.provider.on_delegation(
+                        agent.name, task, f"ERROR: {e}",
+                        decision_id=agent.agent_id,
+                    )
                 return TrigramMessage.create(
                     source=agent.ref,
                     target=AgentRef(Layer.REN, "orchestrator"),

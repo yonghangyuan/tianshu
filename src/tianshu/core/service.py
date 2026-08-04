@@ -983,6 +983,7 @@ class AgentCore:
             provider,
             self._audit,
             provider_info=provider_info,
+            memory_provider=self._memory.provider if hasattr(self._memory, 'provider') else None,
         )
 
     def _get_tools(self) -> list[dict[str, Any]] | None:

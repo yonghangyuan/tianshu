@@ -34,6 +34,7 @@ class ContextEngine:
         audit_service: Any = None,
         *,
         provider_info: str = "",
+        memory_provider: Any = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
         """组装完整的消息列表。
 
@@ -69,6 +70,7 @@ class ContextEngine:
             comp_meta = await self._compress(
                 messages, ratio, provider, audit_service,
                 estimated_tokens, max_tokens, total_chars,
+                memory_provider=memory_provider,
             )
             if comp_meta and "_messages" in comp_meta:
                 messages = comp_meta.pop("_messages")
@@ -86,6 +88,8 @@ class ContextEngine:
         estimated_tokens: int,
         max_tokens: int,
         total_chars: int,
+        *,
+        memory_provider: Any = None,
     ) -> dict | None:
         """分级压缩。"""
         # Compression level
@@ -102,6 +106,13 @@ class ContextEngine:
 
         if not middle:
             return None
+
+        # Memory hook: 压缩前保存即将丢弃的消息
+        if memory_provider:
+            try:
+                await memory_provider.on_pre_compress(middle)
+            except Exception:
+                pass
 
         try:
             middle_text = "\n".join(

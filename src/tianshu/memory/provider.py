@@ -1,5 +1,6 @@
-"""Memory Provider 抽象——支持多后端。
+"""Memory Provider 抽象——支持多后端，完整生命周期。
 
+借鉴 Hermes memory_provider.py (15 hooks) + OpenClaw 延迟加载。
 当前: SQLiteMemoryProvider (默认, aiosqlite)
 预留: ChromaDB, Honcho, Mem0
 """
@@ -12,41 +13,100 @@ from typing import Any
 
 
 class BaseMemoryProvider(ABC):
-    """记忆后端抽象——所有 Memory provider 实现此接口。
+    """记忆后端抽象——完整生命周期。
 
-    方法语义与 MemoryService 一致，确保无缝替换。
+    核心 CRUD (必须实现):
+      remember, recall, count, list_recent, delete, clear
+
+    生命周期 hooks (可选——默认空操作):
+      prefetch        — 每轮对话前查询相关记忆, 注入 system prompt
+      sync_turn       — 每轮对话后同步 user+assistant 消息
+      on_delegation   — 子 Agent 完成任务后观察结果
+      on_pre_compress — 上下文压缩前最后一刻保存关键事实
+      on_session_end  — 会话结束时清理/持久化
+      system_prompt_block — 返回应注入 system prompt 的记忆块
     """
 
-    @abstractmethod
-    async def remember(
-        self, key: str, value: str, category: str = "fact",
-        *, session_id: str = "",
-    ) -> None:
-        """存一条记忆。"""
+    # ── 核心 CRUD (必须实现) ──────────────────────────────────────
 
     @abstractmethod
-    async def recall(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]:
-        """关键词/语义搜索。返回 [{key, value, category, score}]。"""
+    async def remember(self, key: str, value: str, category: str = "fact",
+                       *, session_id: str = "") -> None: ...
 
     @abstractmethod
-    async def count(self) -> int:
-        """总记忆数。"""
+    async def recall(self, query: str, *, limit: int = 5) -> list[dict[str, Any]]: ...
 
     @abstractmethod
-    async def list_recent(self, limit: int = 10) -> list[dict[str, Any]]:
-        """最近 N 条。"""
+    async def count(self) -> int: ...
 
     @abstractmethod
-    async def delete(self, key: str) -> bool:
-        """删除一条记忆。"""
+    async def list_recent(self, limit: int = 10) -> list[dict[str, Any]]: ...
 
     @abstractmethod
-    async def clear(self) -> None:
-        """清空所有记忆。"""
+    async def delete(self, key: str) -> bool: ...
+
+    @abstractmethod
+    async def clear(self) -> None: ...
+
+    # ── 生命周期 hooks (可选——默认空操作) ─────────────────────────
+
+    async def prefetch(self, query: str, *, limit: int = 3) -> str:
+        """每轮对话前查询相关记忆, 返回应注入 system prompt 的文本块。"""
+        results = await self.recall(query, limit=limit)
+        if not results:
+            return ""
+        return "\n".join(f"[{r['category']}] {r['key']}: {r['value'][:200]}" for r in results)
+
+    async def sync_turn(self, user_input: str, assistant_output: str,
+                        *, session_id: str = "") -> None:
+        """每轮对话后同步。默认: 自动记住关键对话。"""
+        if len(assistant_output) > 50:
+            await self.remember(
+                key=f"turn_{hash(user_input) % 100000}",
+                value=f"Q: {user_input[:100]}\nA: {assistant_output[:200]}",
+                category="conversation",
+                session_id=session_id,
+            )
+
+    async def on_delegation(self, agent_name: str, task: str, result: str,
+                            *, decision_id: str = "") -> None:
+        """子 Agent 完成任务后调用。观察并记住 Agent 表现。"""
+        await self.remember(
+            key=f"delegation_{agent_name}_{decision_id[:8] if decision_id else 'x'}",
+            value=f"Agent: {agent_name}\nTask: {task[:100]}\nResult: {result[:200]}",
+            category="delegation",
+        )
+
+    async def on_pre_compress(self, messages_to_compress: list[dict],
+                               *, session_id: str = "") -> None:
+        """压缩前保存即将被丢弃的中间消息到记忆。"""
+        for m in messages_to_compress[:5]:  # 最多保存 5 条
+            content = str(m.get("content", ""))[:300]
+            if content.strip():
+                await self.remember(
+                    key=f"compressed_{hash(content) % 100000}",
+                    value=content,
+                    category="compressed_context",
+                    session_id=session_id,
+                )
+
+    async def on_session_end(self, *, session_id: str = "") -> None:
+        """会话结束清理。默认: 无操作。"""
+        pass
+
+    async def system_prompt_block(self) -> str:
+        """返回应注入 system prompt 的记忆块。默认: 最近 5 条事实。"""
+        recent = await self.list_recent(5)
+        if not recent:
+            return ""
+        return "## Memory\n" + "\n".join(
+            f"- [{r['category']}] {r['key']}: {r['value'][:150]}"
+            for r in recent
+        )
 
 
 class SQLiteMemoryProvider(BaseMemoryProvider):
-    """默认 SQLite 后端——与现有 MemoryService 行为一致。"""
+    """默认 SQLite 后端。"""
 
     def __init__(self, base_dir: str | Path = ""):
         import aiosqlite
