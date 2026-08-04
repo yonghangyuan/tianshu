@@ -354,3 +354,144 @@ class TestDecisionEngine:
         result = decide(fused, [("A", action_a), ("B", action_b)], ctx)
         assert result.chosen_action in ("A", "B")
         assert result.criterion is not None
+
+
+class TestE2EIntegration:
+    """端到端集成测试——输入→融合→决策→闸门→审计 完整链路。"""
+
+    @pytest.mark.asyncio
+    async def test_full_chain_safe_tool(self):
+        """SAFE 工具: 消息验证→权限→策略→无风险评估→执行→审计。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.diyao.providers.registry import ProviderRegistry
+        from tianshu.core.router import RoutingConfig
+        from tianshu.sdk.trigram import Layer
+
+        core = AgentCore()
+        reg = ProviderRegistry()
+        class MockP:
+            provider_name = "deepseek"; model_id = "deepseek-chat"
+            async def chat(self, messages, **kw):
+                from tianshu.sdk.models import ProviderResponse
+                return ProviderResponse(content="ok")
+            async def is_available(self):
+                return True
+        reg.register(MockP())
+        core.setup(registry=reg, routing=RoutingConfig(fallback="deepseek/chat"), system_prompt="")
+
+        result = await core.execute_via_trigram("web_search", {"query": "test"})
+
+        # 验证完整链路
+        assert result["allowed"] is True
+        chain = result["message_chain"]
+        assert len(chain) == 3  # di→ren + ren→tian + result
+        assert chain[0]["source"]["layer"] == "di"
+        assert chain[1]["source"]["layer"] == "ren"
+        assert chain[1]["target"]["layer"] == "tian"
+        # 审计六问已记录
+        assert result["audit"] is not None
+        assert "who" in result["audit"]
+        assert "decision" in result["audit"]
+
+    @pytest.mark.asyncio
+    async def test_full_chain_critical_blocked(self):
+        """DANGER 工具: 预防原则否决 → 不执行 → OVERRIDE 消息。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.diyao.providers.registry import ProviderRegistry
+        from tianshu.core.router import RoutingConfig
+        from tianshu.sdk.trigram import DecisionContext, WorldLevel
+        from tianshu.core.tool_registry import ToolInfo
+        from tianshu.sdk.trigram import Layer
+
+        core = AgentCore()
+        reg = ProviderRegistry()
+        class MockP:
+            provider_name = "deepseek"; model_id = "deepseek-chat"
+            async def chat(self, messages, **kw):
+                from tianshu.sdk.models import ProviderResponse
+                return ProviderResponse(content="ok")
+            async def is_available(self):
+                return True
+        reg.register(MockP())
+        core.setup(registry=reg, routing=RoutingConfig(fallback="deepseek/chat"), system_prompt="")
+
+        core._tool_registry.register(ToolInfo(
+            "dangerous_op", "高危操作", {}, None,
+            permission=3, skill_name="test",
+            stakes=DecisionContext.critical_stakes(),
+            world_level=WorldLevel.CONTROLLABLE,
+        ))
+
+        result = await core.execute_via_trigram("dangerous_op", {})
+
+        assert result["allowed"] is False
+        assert "否决" in result["result"]
+        # 链中有 OVERRIDE 消息
+        priorities = [m["priority"] for m in result["message_chain"]]
+        assert "OVERRIDE" in priorities
+
+    @pytest.mark.asyncio
+    async def test_world_level_strategy_switch(self):
+        """四层世界: UNOBSERVABLE→沉默, CONTROLLABLE→否决。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.diyao.providers.registry import ProviderRegistry
+        from tianshu.core.router import RoutingConfig
+        from tianshu.sdk.trigram import WorldLevel, DecisionContext
+        from tianshu.core.tool_registry import ToolInfo
+
+        core = AgentCore()
+        reg = ProviderRegistry()
+        class MockP:
+            provider_name = "deepseek"; model_id = "deepseek-chat"
+            async def chat(self, messages, **kw):
+                from tianshu.sdk.models import ProviderResponse
+                return ProviderResponse(content="ok")
+            async def is_available(self):
+                return True
+        reg.register(MockP())
+        core.setup(registry=reg, routing=RoutingConfig(fallback="deepseek/chat"), system_prompt="")
+
+        # UNOBSERVABLE: 天层沉默——即使不知道的工具，也不阻止
+        core._tool_registry.register(ToolInfo(
+            "unknown_thing", "未知领域", {}, None,
+            permission=0, world_level=WorldLevel.UNOBSERVABLE,
+        ))
+        r1 = await core.execute_via_trigram("unknown_thing", {})
+        assert r1["allowed"] is True  # 天层沉默，不阻止
+
+        # CONTROLLABLE + CRITICAL: 天层否决
+        core._tool_registry.register(ToolInfo(
+            "launch_system", "发射系统", {}, None,
+            permission=3, world_level=WorldLevel.CONTROLLABLE,
+            stakes=DecisionContext.critical_stakes(),
+        ))
+        r2 = await core.execute_via_trigram("launch_system", {"target": "alpha"})
+        assert r2["allowed"] is False  # 预防原则否决
+
+    @pytest.mark.asyncio
+    async def test_bayesian_fuse_in_chain(self):
+        """贝叶斯融合 + 决策引擎 联合测试。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.diyao.providers.registry import ProviderRegistry
+        from tianshu.core.router import RoutingConfig
+        from tianshu.sdk.trigram import (
+            EntityDynamics, SensorCharacteristics,
+            bayesian_fuse, decide, DecisionContext,
+        )
+        import time
+
+        # 先融合
+        now = time.time()
+        fused = bayesian_fuse([
+            (84.92, now, SensorCharacteristics.from_preset("precision")),
+        ], EntityDynamics.from_preset("fast"))
+
+        # 再决策
+        def ok(_): return 0.0
+        def bad(_): return 1.0
+        result = decide(fused, [("ok", ok), ("bad", bad)], DecisionContext.low_stakes())
+
+        assert result.chosen_action == "ok"
+        assert result.criterion.value == "expected_utility"
+        # 验证融合精度
+        assert fused.posterior_variance < 0.1  # 精密传感器
