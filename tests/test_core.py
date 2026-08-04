@@ -598,6 +598,33 @@ class TestAgentScheduler:
         assert len(fast_ticks) > len(slow_ticks) * 1.5
 
 
+class TestLearnCommand:
+    """/learn 命令——LLM 自生成 SKILL.md。"""
+
+    def test_build_learn_prompt_includes_tools(self):
+        """Prompt 包含用户描述和可用工具。"""
+        from tianshu.renyao.skills.learn import build_learn_prompt
+        prompt = build_learn_prompt(
+            "test skill", ["tool_a"], "some context", ["tool_a", "tool_b"],
+        )
+        assert "test skill" in prompt
+        assert "tool_a" in prompt
+        assert "SKILL.md" in prompt
+
+    def test_parse_skill_md_extracts_frontmatter(self):
+        """正确解析 SKILL.md 的 frontmatter。"""
+        from tianshu.renyao.skills.learn import parse_skill_md
+        sample = "---\nname: test\ndescription: desc\ntrigram: di\ntools: [a]\nversion: 1\n---\n\n# Body"
+        meta, body = parse_skill_md(sample)
+        assert meta["name"] == "test"
+        assert "Body" in body
+
+    def test_parse_invalid_returns_none(self):
+        """无效输入返回 None。"""
+        from tianshu.renyao.skills.learn import parse_skill_md
+        assert parse_skill_md("not a skill") is None
+
+
 class TestOrchestrator:
     """人层调度器——创建/分发/收集/销毁子 Agent。"""
 

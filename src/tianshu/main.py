@@ -560,6 +560,74 @@ def _main_sync() -> None:
         elif user_input in ("reload", "/reload"):
             _do_reload(core, providers_yaml, routing_config, system_prompt)
             continue
+        elif user_input.startswith("/learn ") or user_input.startswith("learn "):
+            desc = user_input.split(maxsplit=1)[1] if " " in user_input else ""
+            if not desc:
+                _rich_console.print("[dim]用法: /learn <技能描述>[/dim]")
+                _rich_console.print("[dim]例如: /learn 把刚才搜索论文并生成笔记的操作变成技能[/dim]")
+                continue
+            _rich_console.print(f"\n[bold cyan]🧬 /learn[/bold cyan] {desc}")
+            _rich_console.print("[dim]正在分析最近操作并生成技能...[/dim]")
+            _rich_console.print()
+
+            # 构建 prompt
+            from tianshu.renyao.skills.learn import build_learn_prompt, parse_skill_md
+            # 收集最近使用的工具
+            recent_tools: list[str] = []
+            if hasattr(core, 'last_reasoning'):
+                pass
+            # 获取可用工具列表
+            all_tools = list(core.skills.loader.get_all_tools()) if core.skills else []
+            tool_names = [t.get("function", {}).get("name", "") for t in all_tools if isinstance(t, dict)]
+
+            prompt = build_learn_prompt(
+                description=desc,
+                recent_tools=recent_tools,
+                recent_conversation="",
+                available_tools=tool_names,
+            )
+
+            # 发送给 LLM
+            async def _learn():
+                from tianshu.sdk.models import AgentRequest, AgentContext
+                ctx = AgentContext()
+                return await core.run(
+                    AgentRequest(input=prompt, task_type="skill_generation"),
+                    ctx,
+                )
+            try:
+                resp = asyncio.run(_learn())
+                if resp and resp.content:
+                    parsed = parse_skill_md(resp.content)
+                    if parsed:
+                        meta, body = parsed
+                        skill_name = meta.get("name", "unnamed")
+                        skill_path = Path.home() / ".tianshu" / "skills" / f"{skill_name}.md"
+                        skill_path.parent.mkdir(parents=True, exist_ok=True)
+
+                        # 构建完整 SKILL.md
+                        import yaml
+                        full_md = f"---\n{yaml.dump(meta, allow_unicode=True, default_flow_style=False)}---\n\n{body}"
+                        skill_path.write_text(full_md, encoding="utf-8")
+
+                        _rich_console.print(f"  ✅ 技能已保存: [cyan]{skill_name}[/cyan]")
+                        _rich_console.print(f"     路径: {skill_path}")
+                        _rich_console.print(f"     {len(meta.get('tools', []))} 个工具 · 关键词: {', '.join(meta.get('trigger_keywords', [])[:5])}")
+
+                        # 重新加载技能
+                        if core.skills:
+                            core.skills.discover_and_load()
+                            core._tool_registry.scan_skills(core.skills.loader)
+                            _rich_console.print(f"     技能已加载，现在即可使用。")
+                    else:
+                        _rich_console.print(f"  [yellow]⚠ LLM 返回格式不符合 SKILL.md，请重试或手动编辑[/yellow]")
+                        _rich_console.print(f"  [dim]原始回复: {resp.content[:300]}[/dim]")
+                else:
+                    _rich_console.print(f"  [red]❌ 生成失败，请检查 API 连接[/red]")
+            except Exception as e:
+                _rich_console.print(f"  [red]❌ {e}[/red]")
+            _rich_console.print()
+            continue
         elif user_input in ("clear", "/clear"):
             _rich_console.clear()
             continue
