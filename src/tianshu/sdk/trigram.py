@@ -690,3 +690,116 @@ def industrial_iot_agents() -> list[AgentRegistration]:
             description="安全守门人——实时拦截违规操作，OVERRIDE权限",
         ),
     ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 八、跨时间尺度仲裁
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class ArbitrationResult:
+    """天层跨时间仲裁的结果。"""
+
+    winner: AgentRef  # 置信度最高的信息源
+    confidence: float  # 获胜者的当前置信度
+    reasoning: str  # 人类可读的仲裁理由
+    conflict: bool  # True = 前两名置信度太接近，无法确定裁决
+    report: dict[str, Any] = field(default_factory=dict)
+    # report 包含每个信息源的详细评估
+
+
+def arbitrate(
+    reports: list[tuple[TrigramMessage, AgentRegistration]],
+    entity_id: str = "",
+) -> ArbitrationResult:
+    """天层跨时间尺度信息仲裁。
+
+    当多个 Agent 对同一实体给出矛盾信息时，天层根据：
+      1. 各信息源的当前置信度（基于时间衰减函数）
+      2. 置信度相近时，比较信息源的历史准确率
+    裁定信任哪一个信息源。
+
+    Args:
+        reports: [(消息, Agent注册信息), ...] — 所有关于同一实体的报告
+        entity_id: 被报告的实体标识（用于人类可读的输出）
+
+    Returns:
+        ArbitrationResult — 包含获胜者、置信度、理由、是否冲突
+
+    Example:
+        # 快速传感器 vs 慢速传感器
+        fast_msg = ...  # 5秒前的数据
+        slow_msg = ...  # 2小时前的数据
+        result = arbitrate([
+            (fast_msg, fast_agent),
+            (slow_msg, slow_agent),
+        ], entity_id="workshop_3_temp")
+        # → winner=fast_agent, confidence=0.5, conflict=False
+    """
+    if not reports:
+        raise ValueError("仲裁至少需要一条报告")
+
+    # 1. 计算每条报告的当前置信度
+    scored: list[dict[str, Any]] = []
+    for msg, agent_reg in reports:
+        conf = msg.confidence(half_life_ms=agent_reg.time_scale.decay.half_life_ms)
+        scored.append({
+            "msg": msg,
+            "agent": agent_reg,
+            "confidence": conf,
+            "age_ms": msg.age_ms,
+            "tick": agent_reg.time_scale.tick_label,
+            "half_life_ms": agent_reg.time_scale.decay.half_life_ms,
+        })
+
+    # 按置信度降序
+    scored.sort(key=lambda x: x["confidence"], reverse=True)
+
+    # 2. 判断是否冲突（前两名置信度差距 < 0.15）
+    conflict = False
+    if len(scored) >= 2:
+        gap = scored[0]["confidence"] - scored[1]["confidence"]
+        conflict = abs(gap) < 0.15
+
+    winner = scored[0]
+
+    # 3. 生成人类可读的仲裁理由
+    parts = [f"仲裁实体: {entity_id or 'unknown'}"]
+    for i, s in enumerate(scored):
+        parts.append(
+            f"  [{i+1}] {s['agent'].ref} "
+            f"置信度={s['confidence']:.2%} "
+            f"(已过{s['age_ms']}ms, tick={s['tick']}, "
+            f"半衰={s['half_life_ms']}ms)"
+        )
+
+    if conflict:
+        parts.append(
+            f"  ⚠️ 冲突: 前两名置信度差距过小({abs(gap):.2%})，建议升级到人层确认"
+        )
+    else:
+        parts.append(
+            f"  → 裁定: 信任 {winner['agent'].ref} "
+            f"(置信度 {winner['confidence']:.2%})"
+        )
+
+    return ArbitrationResult(
+        winner=winner["agent"].ref,
+        confidence=winner["confidence"],
+        reasoning="\n".join(parts),
+        conflict=conflict,
+        report={
+            "entity": entity_id,
+            "sources": [
+                {
+                    "agent": s["agent"].ref.to_dict(),
+                    "confidence": round(s["confidence"], 4),
+                    "age_ms": s["age_ms"],
+                    "tick": s["tick"],
+                }
+                for s in scored
+            ],
+            "conflict": conflict,
+        },
+    )

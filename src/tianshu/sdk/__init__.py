@@ -34,6 +34,8 @@ from .trigram import (
     AgentRegistration,
     # Scenarios
     urban_city_brain_agents, industrial_iot_agents,
+    # Arbitration
+    arbitrate, ArbitrationResult,
     # Validation
     validate_message,
 )
@@ -67,6 +69,8 @@ __all__ = [
     "AgentRegistration",
     # Trigram — Scenarios
     "urban_city_brain_agents", "industrial_iot_agents",
+    # Trigram — Arbitration
+    "arbitrate", "ArbitrationResult",
     # Trigram — Validation
     "validate_message",
 ]

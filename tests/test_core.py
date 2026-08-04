@@ -160,3 +160,75 @@ class TestTrigramChannel:
         override_msg = result["message_chain"][-1]
         assert override_msg["priority"] == "OVERRIDE"
         assert override_msg["source"]["layer"] == "tian"
+
+
+class TestTimeArbitration:
+    """跨时间尺度仲裁——天层根据衰减函数裁定信任哪个信息源。"""
+
+    def test_fast_beats_stale(self):
+        """新数据置信度高 → 胜出。"""
+        import time
+        from tianshu.sdk.trigram import (
+            arbitrate, TrigramMessage, AgentRef, Layer, AgentRegistration,
+            TimeScale, InfoDecayConfig, SyncMode, LayerPermission,
+        )
+
+        now_ms = int(time.time() * 1000)
+        fast = AgentRegistration(
+            ref=AgentRef(Layer.DI, "fast_sensor"),
+            time_scale=TimeScale(tick_ms=100, decay=InfoDecayConfig(half_life_ms=60_000)),
+            permissions=[LayerPermission.EXECUTE],
+        )
+        slow = AgentRegistration(
+            ref=AgentRef(Layer.DI, "slow_sensor"),
+            time_scale=TimeScale(tick_ms=3_600_000, decay=InfoDecayConfig(half_life_ms=600_000)),
+            permissions=[LayerPermission.EXECUTE],
+        )
+
+        fresh_msg = TrigramMessage(
+            decision_id="d1", timestamp=now_ms - 1_000, ttl_ms=60_000,
+            source=fast.ref, target=AgentRef(Layer.REN, "planner"), intent="新数据",
+        )
+        stale_msg = TrigramMessage(
+            decision_id="d2", timestamp=now_ms - 600_000, ttl_ms=600_000,
+            source=slow.ref, target=AgentRef(Layer.REN, "planner"), intent="旧数据",
+        )
+
+        result = arbitrate([(fresh_msg, fast), (stale_msg, slow)], entity_id="test")
+
+        assert not result.conflict
+        # 1秒前 vs 10分钟前 → 快传感器胜出
+        assert result.winner == fast.ref
+
+    def test_near_tie_flags_conflict(self):
+        """置信度相近 → 标记为冲突。"""
+        import time
+        from tianshu.sdk.trigram import (
+            arbitrate, TrigramMessage, AgentRef, Layer, AgentRegistration,
+            TimeScale, InfoDecayConfig, SyncMode, LayerPermission,
+        )
+
+        now_ms = int(time.time() * 1000)
+        a1 = AgentRegistration(
+            ref=AgentRef(Layer.DI, "sensor_a"),
+            time_scale=TimeScale(tick_ms=1000, decay=InfoDecayConfig(half_life_ms=60_000)),
+            permissions=[LayerPermission.EXECUTE],
+        )
+        a2 = AgentRegistration(
+            ref=AgentRef(Layer.DI, "sensor_b"),
+            time_scale=TimeScale(tick_ms=1000, decay=InfoDecayConfig(half_life_ms=60_000)),
+            permissions=[LayerPermission.EXECUTE],
+        )
+
+        # 两个消息几乎同时到达，相同半衰 → 置信度几乎相同
+        m1 = TrigramMessage(
+            decision_id="d_a", timestamp=now_ms - 2_000, ttl_ms=60_000,
+            source=a1.ref, target=AgentRef(Layer.REN, "planner"), intent="报告A",
+        )
+        m2 = TrigramMessage(
+            decision_id="d_b", timestamp=now_ms - 3_000, ttl_ms=60_000,
+            source=a2.ref, target=AgentRef(Layer.REN, "planner"), intent="报告B",
+        )
+
+        result = arbitrate([(m1, a1), (m2, a2)], entity_id="test")
+        assert result.conflict  # 差值仅 1 秒，应在阈值内
