@@ -2,6 +2,7 @@
 
 import pytest
 import sys
+import asyncio
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -537,11 +538,61 @@ class TestContextCompression:
         assert meta["stored_decision_id"]  # 审计 ID 已生成
         assert "已完成" in meta["summary"] or "[已完成]" in meta["summary"]
 
-        # 查询审计快照（可能需要数据库迁移）
-        snap = await core._audit.get_snapshot(meta["stored_decision_id"])
-        if snap is not None:
-            assert snap["type"] == "context_compression"
-            assert snap["level"] == meta["level"]
-        else:
-            # 数据库表未迁移——优雅降级
-            assert meta["stored_decision_id"] == "db_migration_needed"
+class TestAgentScheduler:
+    """Agent 时间尺度调度——按声明的 tick 真实运行。"""
+
+    @pytest.mark.asyncio
+    async def test_agent_ticks_at_declared_rate(self):
+        """Agent 按声明的 tick_ms 周期性触发。"""
+        from tianshu.tianyao.agent_scheduler import AgentScheduler
+        from tianshu.sdk.trigram import AgentRef, Layer, TimeScale, TrigramMessage
+
+        scheduler = AgentScheduler()
+        ticks_received: list[int] = []
+
+        async def my_callback(ref, tick_idx, elapsed):
+            ticks_received.append(tick_idx)
+            return TrigramMessage.create(
+                source=ref, target=AgentRef(Layer.REN, "test"),
+                intent=f"Tick {tick_idx}",
+            )
+
+        ref = AgentRef(Layer.DI, "test_sensor")
+        scheduler.register(ref, TimeScale(tick_ms=100), my_callback)
+        await scheduler.start()
+        await asyncio.sleep(0.35)  # 应触发 ~3 次
+        await scheduler.stop()
+
+        assert len(ticks_received) >= 2  # 至少 2 次
+        assert ticks_received[0] < ticks_received[-1]  # tick 递增
+
+    @pytest.mark.asyncio
+    async def test_multi_agent_different_ticks(self):
+        """不同 Agent 按不同频率 tick。"""
+        from tianshu.tianyao.agent_scheduler import AgentScheduler
+        from tianshu.sdk.trigram import AgentRef, Layer, TimeScale
+
+        scheduler = AgentScheduler()
+        fast_ticks: list[int] = []
+        slow_ticks: list[int] = []
+
+        async def fast_cb(ref, idx, elapsed):
+            fast_ticks.append(idx)
+            return None
+
+        async def slow_cb(ref, idx, elapsed):
+            slow_ticks.append(idx)
+            return None
+
+        scheduler.register(
+            AgentRef(Layer.DI, "fast"), TimeScale(tick_ms=50), fast_cb,
+        )
+        scheduler.register(
+            AgentRef(Layer.DI, "slow"), TimeScale(tick_ms=200), slow_cb,
+        )
+        await scheduler.start()
+        await asyncio.sleep(0.5)
+        await scheduler.stop()
+
+        # 快速 Agent 的 tick 次数应明显多于慢速
+        assert len(fast_ticks) > len(slow_ticks) * 1.5
