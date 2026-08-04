@@ -55,7 +55,8 @@ def _print_cmd_help() -> None:
         ("/audit", "审计记录"),
         ("/orchestrate", "多 Agent 编排"),
         ("/plan", "生成计划(不执行)"),
-        ("/agents", "查看活跃子 Agent"),
+        ("/agent", "管理子 Agent"),
+        ("/learn", "生成新技能"),
         ("/session", "会话管理"),
         ("/memory", "记忆管理"),
         ("/tools", "查看工具"),
@@ -627,6 +628,29 @@ def _main_sync() -> None:
             except Exception as e:
                 _rich_console.print(f"  [red]❌ {e}[/red]")
             _rich_console.print()
+            continue
+        elif user_input.startswith("/agent ") or user_input.startswith("agent "):
+            parts = user_input.split(maxsplit=2)
+            sub = parts[1] if len(parts) > 1 else "list"
+            if sub == "list":
+                _rich_console.print(core.orchestrator.status_summary())
+            elif sub == "create" and len(parts) > 2:
+                args = parts[2].split(maxsplit=2)
+                name = args[0]
+                skills = args[1].split(",") if len(args) > 1 else ["web_search"]
+                model = args[2] if len(args) > 2 else "deepseek-v4-flash"
+                agent = asyncio.run(core.orchestrator.create_agent(name, skills, model))
+                _rich_console.print(f"  ✅ Agent [cyan]{name}[/cyan] 已创建 ({agent.agent_id})")
+            elif sub == "destroy" and len(parts) > 2:
+                name = parts[2]
+                agent = core.orchestrator.by_name.get(name)
+                if agent:
+                    asyncio.run(core.orchestrator.destroy(agent))
+                    _rich_console.print(f"  ✅ Agent [cyan]{name}[/cyan] 已销毁")
+                else:
+                    _rich_console.print(f"  [red]Agent '{name}' 未找到[/red]")
+            else:
+                _rich_console.print("[dim]用法: /agent list | create <name> <skills> | destroy <name>[/dim]")
             continue
         elif user_input in ("clear", "/clear"):
             _rich_console.clear()

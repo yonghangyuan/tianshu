@@ -416,6 +416,77 @@ async def admin_reload(request: Request):
         raise HTTPException(500, detail=f"重载失败: {e}")
 
 
+# ── Agent 生命周期 API ──────────────────────────────────────────
+
+class AgentCreate(BaseModel):
+    name: str
+    skills: list[str] = []
+    model: str = "deepseek-v4-flash"
+
+@app.post("/agents")
+async def create_agent(req: AgentCreate, request: Request, _=Depends(require_auth)):
+    """创建子 Agent。"""
+    if _core is None:
+        raise HTTPException(503, "AgentCore not ready")
+    agent = await _core.orchestrator.create_agent(
+        req.name, req.skills or ["web_search"], req.model,
+    )
+    return {
+        "ok": True,
+        "agent": {
+            "id": agent.agent_id,
+            "name": agent.name,
+            "skills": agent.skills,
+            "model": agent.model,
+            "status": agent.status,
+        },
+    }
+
+@app.get("/agents")
+async def list_agents(request: Request, _=Depends(require_auth)):
+    """列出所有活跃子 Agent。"""
+    if _core is None:
+        raise HTTPException(503)
+    return {
+        "count": _core.orchestrator.active_count,
+        "agents": [
+            {"id": a.agent_id, "name": a.name, "status": a.status, "model": a.model}
+            for a in _core.orchestrator.active.values()
+        ],
+    }
+
+@app.delete("/agents/{agent_name}")
+async def delete_agent(agent_name: str, request: Request, _=Depends(require_auth)):
+    """销毁子 Agent。"""
+    if _core is None:
+        raise HTTPException(503)
+    agent = _core.orchestrator.by_name.get(agent_name)
+    if not agent:
+        raise HTTPException(404, f"Agent '{agent_name}' not found")
+    await _core.orchestrator.destroy(agent)
+    return {"ok": True, "deleted": agent_name}
+
+@app.post("/agents/{agent_name}/dispatch")
+async def dispatch_agent(agent_name: str, request: Request, _=Depends(require_auth)):
+    """给子 Agent 派任务。"""
+    if _core is None:
+        raise HTTPException(503)
+    body = await request.json()
+    task = body.get("task", "")
+    if not task:
+        raise HTTPException(400, "task is required")
+    agent = _core.orchestrator.by_name.get(agent_name)
+    if not agent:
+        raise HTTPException(404, f"Agent '{agent_name}' not found")
+    msg = await _core.orchestrator.dispatch(agent, task)
+    return {
+        "ok": True,
+        "agent": agent_name,
+        "intent": str(msg.intent)[:200],
+        "result": msg.payload.get("result", "") if msg.payload else "",
+    }
+
+
 # ── WebSocket 群聊 ──────────────────────────────────────────────
 
 @app.websocket("/ws")
@@ -893,7 +964,7 @@ def main():
     args = parser.parse_args()
     print(f"天枢 API Server → http://{args.host}:{args.port}")
     print(f"  /health  /run  /tools  /audit  /memory  /skills  /models")
-    print(f"  /chat   /admin/reload  /ws")
+    print(f"  /chat   /admin/reload  /agents  /ws")
     uvicorn.run(app, host=args.host, port=args.port)
 
 
