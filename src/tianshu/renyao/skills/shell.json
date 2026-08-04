@@ -1,0 +1,38 @@
+{
+  "name": "shell",
+  "description": "安全执行系统命令（Docker 沙箱隔离）",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "shell_exec",
+      "description": "Execute a shell command in a sandboxed environment. Use for: python scripts, file operations, data processing. Do NOT use for: deleting system files, installing software.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Timeout in seconds",
+            "default": 30
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "permission": 2
+    }
+  ],
+  "trigger_keywords": [
+    "运行",
+    "执行",
+    "run",
+    "shell",
+    "命令"
+  ],
+  "handler": "tianshu.renyao.skills.shell:ShellSkill"
+}

@@ -1,0 +1,77 @@
+{
+  "name": "intel",
+  "description": "情报搜集与分析——多源搜索、去重、提取关键信息、生成简报",
+  "trigram": "天",
+  "version": 1,
+  "tools": [
+    {
+      "name": "intel_search",
+      "description": "Multi-source intelligence search. Searches WeChat+arXiv+web, deduplicates, and extracts key info. Returns structured brief.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search topic, e.g. 'AI safety regulations'"
+          },
+          "sources": {
+            "type": "string",
+            "description": "Sources: weixin,arxiv,web,rand (comma-separated, default all)",
+            "default": "weixin,web"
+          },
+          "days": {
+            "type": "integer",
+            "description": "Look back N days",
+            "default": 7
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Max results per source",
+            "default": 5
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permission": 0
+    },
+    {
+      "name": "intel_brief",
+      "description": "Generate a structured intelligence brief from collected items. Saves as .md file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Brief topic/title"
+          },
+          "items_json": {
+            "type": "string",
+            "description": "JSON array of {title,url,source,date,summary} objects"
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "Output directory",
+            "default": "F:/reports"
+          }
+        },
+        "required": [
+          "topic",
+          "items_json"
+        ]
+      },
+      "permission": 2
+    }
+  ],
+  "trigger_keywords": [
+    "情报",
+    "搜集",
+    "监控",
+    "追踪",
+    "简报",
+    "intel",
+    "动态"
+  ],
+  "handler": "tianshu.renyao.skills.intel:IntelSkill"
+}

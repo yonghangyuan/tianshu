@@ -1,0 +1,114 @@
+{
+  "name": "browser",
+  "description": "浏览网页、下载文件、上传文件——最简浏览器，阅读模式",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "sogou_weixin",
+      "description": "Search WeChat public account articles via Sogou. Returns real mp.weixin.qq.com URLs with resolved redirect links. Use this instead of browse+sogou for WeChat article search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search keyword (Chinese or English)"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of results",
+            "default": 10
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permission": 0
+    },
+    {
+      "name": "browse",
+      "description": "Open a URL and return page title, text content, and links. Like browser reader mode — strips ads and scripts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL to open"
+          },
+          "max_chars": {
+            "type": "integer",
+            "description": "Max text characters to return",
+            "default": 8000
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "permission": 0
+    },
+    {
+      "name": "download",
+      "description": "Download a file from URL and save to local path. Returns file size and path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL of the file to download"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local path to save to (default: infer from URL filename)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "upload",
+      "description": "Upload a local file to a URL via HTTP POST/PUT. Returns server response status and body preview.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "local_path": {
+            "type": "string",
+            "description": "Path to local file to upload"
+          },
+          "url": {
+            "type": "string",
+            "description": "Upload destination URL"
+          },
+          "method": {
+            "type": "string",
+            "description": "HTTP method: POST or PUT",
+            "default": "POST"
+          },
+          "field_name": {
+            "type": "string",
+            "description": "Form field name for the file (POST only)",
+            "default": "file"
+          }
+        },
+        "required": [
+          "local_path",
+          "url"
+        ]
+      },
+      "permission": 2
+    }
+  ],
+  "trigger_keywords": [
+    "浏览",
+    "打开网页",
+    "下载",
+    "上传",
+    "browse",
+    "download"
+  ],
+  "handler": "tianshu.renyao.skills.browser:BrowserSkill"
+}

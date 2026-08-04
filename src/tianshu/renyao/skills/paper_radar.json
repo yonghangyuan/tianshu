@@ -1,0 +1,106 @@
+{
+  "name": "paper-radar",
+  "description": "论文搜索、下载 PDF、按分类体系打标签、写深度笔记",
+  "trigram": "地+人",
+  "version": 1,
+  "tools": [
+    {
+      "name": "search_papers",
+      "description": "在 arXiv 上搜索论文。返回论文元数据列表（id, title, authors, year, abstract）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "搜索关键词"
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "最大返回数量，默认 5",
+            "default": 5
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permission": 0
+    },
+    {
+      "name": "download_pdf",
+      "description": "下载论文 PDF 到本地。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "arxiv_id": {
+            "type": "string",
+            "description": "arXiv ID，如 2605.14851"
+          }
+        },
+        "required": [
+          "arxiv_id"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "write_paper_notes",
+      "description": "为论文创建标准化的阅读笔记（Frontmatter + Deep Notes）。保存到 趋势追踪/研究论文/。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "论文标题"
+          },
+          "arxiv_id": {
+            "type": "string",
+            "description": "arXiv ID"
+          },
+          "authors": {
+            "type": "string",
+            "description": "作者列表，逗号分隔"
+          },
+          "year": {
+            "type": "integer",
+            "description": "发表年份"
+          },
+          "abstract": {
+            "type": "string",
+            "description": "论文摘要"
+          },
+          "venue": {
+            "type": "string",
+            "description": "发表 venue（可选）"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Deep Notes 内容（问题/方法/贡献/局限/启发）"
+          }
+        },
+        "required": [
+          "title",
+          "arxiv_id",
+          "authors",
+          "year",
+          "abstract",
+          "notes"
+        ]
+      },
+      "permission": 2
+    }
+  ],
+  "trigger_keywords": [
+    "论文",
+    "paper",
+    "文献",
+    "arxiv",
+    "搜索论文",
+    "下载论文",
+    "论文分类",
+    "论文雷达",
+    "paper radar",
+    "文献追踪"
+  ],
+  "handler": "tianshu.renyao.skills.paper_radar:PaperRadarSkill"
+}

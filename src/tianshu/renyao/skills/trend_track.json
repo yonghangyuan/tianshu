@@ -1,0 +1,85 @@
+{
+  "name": "trend-track",
+  "description": "监控 GitHub Trending、科技新闻，按周归档到趋势追踪目录",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "save_trend_report",
+      "description": "保存趋势报告到 趋势追踪/科技新闻/YYYY.MM/WX/ 目录。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "报告标题"
+          },
+          "content": {
+            "type": "string",
+            "description": "报告内容（Markdown）"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "科技新闻",
+              "军事科技",
+              "时政",
+              "研究论文"
+            ],
+            "description": "报告分类",
+            "default": "科技新闻"
+          },
+          "date": {
+            "type": "string",
+            "description": "报告日期 YYYY-MM-DD，默认今天"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "get_weekly_summary",
+      "description": "查看本周/指定周的目录中有哪些报告。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "科技新闻",
+              "军事科技",
+              "时政",
+              "研究论文"
+            ],
+            "description": "报告分类"
+          },
+          "week_offset": {
+            "type": "integer",
+            "description": "周偏移：0=本周，-1=上周",
+            "default": 0
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "permission": 0
+    }
+  ],
+  "trigger_keywords": [
+    "趋势",
+    "trending",
+    "github",
+    "GitHub",
+    "科技新闻",
+    "每周",
+    "本周",
+    "热点",
+    "趋势追踪"
+  ],
+  "handler": "tianshu.renyao.skills.trend_track:TrendTrackSkill"
+}

@@ -1,0 +1,37 @@
+{
+  "name": "web-search",
+  "description": "自建搜索引擎——直接请求 Bing/百度 HTML 结果页，解析返回。零外部 API。",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web by directly fetching search engine HTML pages and parsing results. No external API used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of results",
+            "default": 5
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permission": 0
+    }
+  ],
+  "trigger_keywords": [
+    "搜索",
+    "search",
+    "查一下",
+    "帮我搜"
+  ],
+  "handler": "tianshu.renyao.skills.web_search:WebSearchSkill"
+}

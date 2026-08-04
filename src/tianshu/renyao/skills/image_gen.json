@@ -1,0 +1,41 @@
+{
+  "name": "image-gen",
+  "description": "生成图片描述提示词，可视化数据/架构/流程图",
+  "trigram": "人",
+  "version": 1,
+  "tools": [
+    {
+      "name": "image_prompt",
+      "description": "Generate a detailed image generation prompt. Use for: architecture diagrams, flowcharts, data visualizations, conceptual illustrations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "What to draw"
+          },
+          "style": {
+            "type": "string",
+            "description": "Style: diagram|illustration|chart|logo",
+            "default": "diagram"
+          }
+        },
+        "required": [
+          "description"
+        ]
+      },
+      "permission": 0
+    }
+  ],
+  "trigger_keywords": [
+    "画",
+    "图",
+    "图片",
+    "生成图",
+    "可视化",
+    "流程图",
+    "架构图",
+    "思维导图"
+  ],
+  "handler": "tianshu.renyao.skills.image_gen:ImageGenSkill"
+}

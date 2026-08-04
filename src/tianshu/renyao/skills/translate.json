@@ -1,0 +1,42 @@
+{
+  "name": "translate",
+  "description": "中英互译，保持语义和风格",
+  "trigram": "人",
+  "version": 1,
+  "tools": [
+    {
+      "name": "translate",
+      "description": "Translate text between Chinese and English. Auto-detect source language.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to translate"
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "zh",
+              "en"
+            ],
+            "description": "Target language",
+            "default": "zh"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "permission": 0
+    }
+  ],
+  "trigger_keywords": [
+    "翻译",
+    "translate",
+    "译",
+    "用英文",
+    "用中文"
+  ],
+  "handler": "tianshu.renyao.skills.translate:TranslateSkill"
+}

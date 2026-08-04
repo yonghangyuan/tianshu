@@ -1,0 +1,70 @@
+{
+  "name": "schedule",
+  "description": "创建、查询、删除日程提醒",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "schedule_add",
+      "description": "Add a calendar event or reminder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Event title"
+          },
+          "time": {
+            "type": "string",
+            "description": "ISO time, e.g. 2026-07-28T14:00"
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional note"
+          }
+        },
+        "required": [
+          "title",
+          "time"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "schedule_list",
+      "description": "List upcoming events.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "permission": 0
+    },
+    {
+      "name": "schedule_remove",
+      "description": "Remove an event by title.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Event title to remove"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "permission": 2
+    }
+  ],
+  "trigger_keywords": [
+    "日程",
+    "提醒",
+    "schedule",
+    "日历",
+    "安排",
+    "定时"
+  ],
+  "handler": "tianshu.renyao.skills.schedule:ScheduleSkill"
+}
