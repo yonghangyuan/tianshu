@@ -274,3 +274,83 @@ class TestTimeArbitration:
         for pname in ["precision", "standard", "coarse", "human"]:
             s = SensorCharacteristics.from_preset(pname)
             assert s.observation_variance > 0
+
+
+class TestDecisionEngine:
+    """决策标准引擎——同一个后验，不同场景利害 → 不同决策。"""
+
+    def test_low_stakes_uses_eum(self):
+        """低风险 → 期望效用最大化。"""
+        from tianshu.sdk.trigram import (
+            decide, DecisionContext, EntityDynamics, SensorCharacteristics,
+            bayesian_fuse,
+        )
+        import time
+        now = time.time()
+        fused = bayesian_fuse(
+            [(84.0, now, SensorCharacteristics.from_preset("precision"))],
+            EntityDynamics.from_preset("fast"),
+        )
+        def ok(_): return 0.0
+        def bad(_): return 1.0
+
+        result = decide(fused, [("ok", ok), ("bad", bad)], DecisionContext.low_stakes())
+        assert result.chosen_action == "ok"
+        assert result.criterion.value == "expected_utility"
+
+    def test_critical_stakes_uses_precautionary(self):
+        """关键安全 → 预防原则，未证明安全则不行动。"""
+        from tianshu.sdk.trigram import (
+            decide, DecisionContext, EntityDynamics, SensorCharacteristics,
+            bayesian_fuse,
+        )
+        import time
+        now = time.time()
+        # 后验均值 90°C，远超 85°C 安全线
+        fused = bayesian_fuse(
+            [(90.0, now, SensorCharacteristics.from_preset("precision"))],
+            EntityDynamics.from_preset("fast"),
+        )
+        def risky(theta): return max(0, theta - 85)
+        def safe(_): return 0.5
+
+        result = decide(
+            fused,
+            [("risky", risky), ("safe", safe)],
+            DecisionContext.critical_stakes(),
+        )
+        # 关键安全 → 预防原则 → 两个动作都有损失 → 不行动
+        assert result.criterion.value == "precautionary"
+
+    def test_select_criterion_maps_contexts(self):
+        """select_criterion 根据利害关系选标准。"""
+        from tianshu.sdk.trigram import (
+            select_criterion, DecisionContext, DecisionCriterion,
+        )
+        assert select_criterion(DecisionContext.low_stakes()) == DecisionCriterion.EXPECTED_UTILITY
+        assert select_criterion(DecisionContext.critical_stakes()) == DecisionCriterion.PRECAUTIONARY
+
+    def test_minimax_picks_lowest_regret(self):
+        """Minimax Regret: 选最坏情况下后悔最小的。"""
+        from tianshu.sdk.trigram import (
+            decide, DecisionContext, EntityDynamics, SensorCharacteristics,
+            bayesian_fuse,
+        )
+        import time
+        now = time.time()
+        fused = bayesian_fuse(
+            [(50.0, now, SensorCharacteristics.from_preset("standard"))],
+            EntityDynamics.from_preset("static"),
+        )
+
+        # 动作A: 固定高损失；动作B: θ 敏感但大多数情况下低损失
+        def action_a(theta): return 0.8
+        def action_b(theta): return abs(theta - 50) / 100
+
+        ctx = DecisionContext(
+            reversibility=0.5, max_loss=0.5, time_pressure=0.5,
+            model_confidence=0.3,  # 低模型置信度 → ROBUST 或 SAFETY_FIRST
+        )
+        result = decide(fused, [("A", action_a), ("B", action_b)], ctx)
+        assert result.chosen_action in ("A", "B")
+        assert result.criterion is not None

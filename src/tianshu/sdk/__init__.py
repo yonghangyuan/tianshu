@@ -40,6 +40,9 @@ from .trigram import (
     update_sensor_reliability,
     # Arbitration (legacy)
     arbitrate, ArbitrationResult,
+    # Decision Engine
+    DecisionCriterion, DecisionContext, DecisionResult,
+    select_criterion, decide,
     # Validation
     validate_message,
 )
@@ -75,6 +78,9 @@ __all__ = [
     "urban_city_brain_agents", "industrial_iot_agents",
     # Trigram — Arbitration
     "arbitrate", "ArbitrationResult",
+    # Trigram — Decision Engine
+    "DecisionCriterion", "DecisionContext", "DecisionResult",
+    "select_criterion", "decide",
     # Trigram — Validation
     "validate_message",
 ]

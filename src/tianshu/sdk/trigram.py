@@ -1,4 +1,4 @@
-"""天枢三爻接口 — 跨层消息协议 + Agent 时间尺度 + 审计标准。
+"""天枢三爻接口 — 跨层消息协议 + Agent 时间尺度 + 审计标准 + 决策引擎。
 
 天·人·地三层不是命名空间，是三道不能互相绕过的闸门。
 每一道闸门定义了清晰的输入/输出接口和权限边界。
@@ -13,9 +13,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Any
+from typing import Any, Callable
 import time
 import hashlib
+import math
+import json
 import json
 
 
@@ -1085,3 +1087,503 @@ def arbitrate(
             "conflict": conflict,
         },
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 九、决策标准引擎 — 同一个后验，六种如何选择
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# 核心问题：
+#   后验分布告诉你"世界大概是什么样"，不告诉你"该怎么做"。
+#   两者之间缺一个决策标准——如何从概率分布到行动选择。
+#
+#   同样的后验 μ=84.92, σ=0.10，阈值 85°C：
+#     EUM:          期望 < 85 → 安全，继续 (关注平均)
+#     Safety-First: CI上界 85.12 > 85 → 降功率 (关注尾部)
+#     Precautionary: 除非能证明安全，否则停机 (举证责任在行动方)
+#
+#   选哪个不是数据问题——是价值观问题，是对错误的容忍度。
+#
+# 六种标准：
+#   1. EXPECTED_UTILITY  — 期望效用最大化 (Savage 1954)
+#   2. SAFETY_FIRST      — 约束: P(损失 > L_max) < α (Roy 1952)
+#   3. MINIMAX_REGRET    — 最小化最大后悔 (Savage 1951)
+#   4. ROBUST            — 在最坏可信情况下最大化 (Wald 1945, 现代鲁棒控制)
+#   5. SATISFICING       — 找到"够好"就停 (Simon 1956)
+#   6. PRECAUTIONARY     — 举证责任在行动方 (UNESCO 2005, 安全关键系统)
+#
+# 场景利害决定标准选择：
+#   irreversibility × max_loss × time_pressure × model_confidence
+#   → select_criterion() 自动选择
+
+
+class DecisionCriterion(Enum):
+    """六种决策标准。
+
+    EXPECTED_UTILITY: 取后验均值，选期望收益最大的动作。默认标准。
+    SAFETY_FIRST:     在损失以高概率不超过安全线的约束下，最大化收益。
+    MINIMAX_REGRET:    选在最坏情况下后悔最小的动作。不需要先验概率。
+    ROBUST:            在所有可信模型中都过得去。当 Q 和 R 可能不准时使用。
+    SATISFICING:       不定最优，找到"够好"就停。时间压力大时使用。
+    PRECAUTIONARY:     除非能证明安全，否则不行动。举证责任在行动方。
+    """
+
+    EXPECTED_UTILITY = "expected_utility"
+    SAFETY_FIRST = "safety_first"
+    MINIMAX_REGRET = "minimax_regret"
+    ROBUST = "robust"
+    SATISFICING = "satisficing"
+    PRECAUTIONARY = "precautionary"
+
+
+@dataclass
+class DecisionContext:
+    """决策场景的利害关系——决定用哪个标准。
+
+    Attributes:
+        reversibility: 0.0=完全可逆, 1.0=完全不可逆
+        max_loss:      0.0=无损失, 1.0=灾难性损失
+        time_pressure: 0.0=无时间压力, 1.0=必须立即决策
+        model_confidence: 0.0=模型不可信, 1.0=模型完全可信
+        option_count:  可选动作数量（影响 satisficing 阈值）
+        alpha:         安全约束的容忍度 (Safety-First/Precautionary 用)
+        loss_threshold: 损失超过此值视为"灾难" (Safety-First 用)
+    """
+
+    reversibility: float = 0.0
+    max_loss: float = 0.0
+    time_pressure: float = 0.0
+    model_confidence: float = 1.0
+    option_count: int = 2
+    alpha: float = 0.01  # 默认 1% 容忍度
+    loss_threshold: float = 0.8  # 损失 > 0.8 视为灾难
+
+    # 预设场景
+    @classmethod
+    def low_stakes(cls) -> DecisionContext:
+        """低风险场景——信息查询、文件读取。"""
+        return cls(reversibility=0.0, max_loss=0.0, time_pressure=0.0,
+                   model_confidence=1.0, option_count=2)
+
+    @classmethod
+    def moderate_stakes(cls) -> DecisionContext:
+        """中等风险——文件写入、API 调用。"""
+        return cls(reversibility=0.3, max_loss=0.3, time_pressure=0.0,
+                   model_confidence=0.8, option_count=3)
+
+    @classmethod
+    def high_stakes(cls) -> DecisionContext:
+        """高风险——资源分配、设备控制。"""
+        return cls(reversibility=0.7, max_loss=0.6, time_pressure=0.3,
+                   model_confidence=0.7, option_count=4, alpha=0.005)
+
+    @classmethod
+    def critical_stakes(cls) -> DecisionContext:
+        """关键安全——不可逆操作、可能危及生命的行动。"""
+        return cls(reversibility=1.0, max_loss=1.0, time_pressure=0.5,
+                   model_confidence=0.5, option_count=2, alpha=0.001,
+                   loss_threshold=0.5)
+
+
+@dataclass
+class DecisionResult:
+    """决策引擎的输出——选择了什么动作、为什么。"""
+
+    chosen_action: str  # 选中的动作名
+    criterion: DecisionCriterion  # 用了哪个标准
+    rationale: str  # 人类可读的理由
+    risk_metrics: dict[str, Any] = field(default_factory=dict)
+    # 包含: expected_loss, prob_catastrophe, worst_case_loss, regret, etc.
+
+
+# ══ 选择标准 ══
+
+
+def select_criterion(ctx: DecisionContext) -> DecisionCriterion:
+    """根据场景利害关系自动选择决策标准。
+
+    选择逻辑 (按优先级):
+      1. 不可逆 + 灾难性 → PRECAUTIONARY (举证责任)
+      2. 不可逆 + 模型不太可信 → SAFETY_FIRST (用约束限制尾部风险)
+      3. 时间压力大 + 选项多 → SATISFICING (够好就行)
+      4. 模型不太可信 → ROBUST (保护最坏可信情况)
+      5. 默认 → EXPECTED_UTILITY (经典决策论)
+    """
+    if ctx.reversibility > 0.8 and ctx.max_loss > 0.7:
+        return DecisionCriterion.PRECAUTIONARY
+    if ctx.reversibility > 0.6 and ctx.model_confidence < 0.4:
+        return DecisionCriterion.SAFETY_FIRST
+    if ctx.time_pressure > 0.7 and ctx.option_count > 5:
+        return DecisionCriterion.SATISFICING
+    if ctx.model_confidence < 0.5:
+        return DecisionCriterion.ROBUST
+    return DecisionCriterion.EXPECTED_UTILITY
+
+
+# ══ 六个标准的具体实现 ══
+
+# 辅助: 后验分布近似为 Normal(μ, σ²)
+# μ = fused.posterior_mean, σ = sqrt(fused.posterior_variance)
+
+
+def _normal_cdf(x: float, mu: float = 0.0, sigma: float = 1.0) -> float:
+    """标准正态 CDF——用 math.erf 实现，零外部依赖。"""
+    return 0.5 * (1.0 + math.erf((x - mu) / (sigma * math.sqrt(2.0))))
+
+
+def _prob_exceeds(threshold: float, fused: FusedEstimate) -> float:
+    """后验超过阈值的概率 P(θ > threshold)。"""
+    sigma = max(fused.posterior_variance ** 0.5, 1e-10)
+    return 1.0 - _normal_cdf(threshold, fused.posterior_mean, sigma)
+
+
+def _evaluate_actions(
+    actions: list[tuple[str, Callable[[float], float]]],
+    theta: float,
+) -> list[tuple[str, float]]:
+    """在给定 θ 下评估所有动作的损失。"""
+    return [(name, loss_fn(theta)) for name, loss_fn in actions]
+
+
+# ── 1. 期望效用最大化 ──
+
+
+def _decide_eum(
+    fused: FusedEstimate,
+    actions: list[tuple[str, Callable[[float], float]]],
+) -> DecisionResult:
+    """期望效用最大化: 选期望损失最小的动作。
+
+    E[L(a)] = ∫ L(a, θ) · p(θ) dθ
+    对正态后验，用 1000 点数值积分近似。
+    """
+    mu = fused.posterior_mean
+    sigma = max(fused.posterior_variance ** 0.5, 1e-10)
+
+    # 在 μ±4σ 范围内对后验采样 (1000 点 Simpson 积分)
+    n = 1000
+    theta_min = mu - 4.0 * sigma
+    theta_max = mu + 4.0 * sigma
+    dtheta = (theta_max - theta_min) / n
+
+    expected_losses: dict[str, float] = {}
+    for name, loss_fn in actions:
+        total = 0.0
+        for i in range(n + 1):
+            t = theta_min + i * dtheta
+            pdf = math.exp(-0.5 * ((t - mu) / sigma) ** 2) / (sigma * math.sqrt(2 * math.pi))
+            total += loss_fn(t) * pdf * dtheta
+        expected_losses[name] = total
+
+    best = min(expected_losses, key=expected_losses.get)
+    return DecisionResult(
+        chosen_action=best,
+        criterion=DecisionCriterion.EXPECTED_UTILITY,
+        rationale=f"期望效用最大化: 选 '{best}' (期望损失={expected_losses[best]:.4f})",
+        risk_metrics={"expected_losses": expected_losses},
+    )
+
+
+# ── 2. 安全第一 ──
+
+
+def _decide_safety_first(
+    fused: FusedEstimate,
+    actions: list[tuple[str, Callable[[float], float]]],
+    ctx: DecisionContext,
+) -> DecisionResult:
+    """安全第一: 最大化期望效用，约束 P(损失 > L_max) < α。
+
+    先筛掉违反安全约束的动作，再在剩余中选期望损失最小的。
+    如果全部违反 → 选违反概率最低的那个。
+    """
+    mu = fused.posterior_mean
+    sigma = max(fused.posterior_variance ** 0.5, 1e-10)
+    safe_actions: list[tuple[str, float]] = []
+    all_actions: list[tuple[str, float, float]] = []  # (name, expected_loss, violation_prob)
+
+    for name, loss_fn in actions:
+        # 估计违反约束的概率: P(L(a, θ) > L_max)
+        # 对简单情况 (单调 loss)，找到临界 θ_c 使 L(a, θ_c) = L_max
+        # 对一般情况，用蒙特卡洛采样
+        violations = 0
+        n_samples = 200
+        for _ in range(n_samples):
+            theta_sample = mu + sigma * _box_muller()
+            if loss_fn(theta_sample) > ctx.loss_threshold:
+                violations += 1
+        violation_prob = violations / n_samples
+
+        # 计算期望损失 (简化——用后验均值处的损失近似)
+        exp_loss = loss_fn(mu)
+
+        all_actions.append((name, exp_loss, violation_prob))
+        if violation_prob < ctx.alpha:
+            safe_actions.append((name, exp_loss))
+
+    if safe_actions:
+        best = min(safe_actions, key=lambda x: x[1])[0]
+        violation = next(v for n, v in [(a[0], a[2]) for a in all_actions] if n == best)
+        return DecisionResult(
+            chosen_action=best,
+            criterion=DecisionCriterion.SAFETY_FIRST,
+            rationale=(
+                f"安全第一 (α={ctx.alpha}): 选 '{best}' "
+                f"(P(灾难)={violation:.4f} < {ctx.alpha})"
+            ),
+            risk_metrics={
+                "all_actions": [{"name": n, "exp_loss": el, "violation_prob": vp}
+                                for n, el, vp in all_actions],
+                "alpha": ctx.alpha,
+                "loss_threshold": ctx.loss_threshold,
+            },
+        )
+
+    # 全部违反 → 选违反概率最低的
+    best_all = min(all_actions, key=lambda x: x[2])
+    return DecisionResult(
+        chosen_action=best_all[0],
+        criterion=DecisionCriterion.SAFETY_FIRST,
+        rationale=(
+            f"安全第一: ⚠️ 无动作满足约束 → 选违反概率最低的 '{best_all[0]}' "
+            f"(P(灾难)={best_all[2]:.4f})"
+        ),
+        risk_metrics={"all_violate": True, "best_violation_prob": best_all[2]},
+    )
+
+
+# ── 3. Minimax Regret ──
+
+
+def _decide_minimax_regret(
+    fused: FusedEstimate,
+    actions: list[tuple[str, Callable[[float], float]]],
+) -> DecisionResult:
+    """Minimax Regret: 选在最坏情况下后悔最小的动作。
+
+    Regret(a, θ) = L(a, θ) - min_{a'} L(a', θ)
+    即: 选了 a 比选最优动作多损失了多少。
+
+    在 θ 的可信范围内 (μ±3σ) 取最大 Regret，选其最小的动作。
+    """
+    mu = fused.posterior_mean
+    sigma = max(fused.posterior_variance ** 0.5, 1e-10)
+
+    # 在可信范围内采样 θ
+    thetas = [mu + i * sigma for i in range(-3, 4)]  # μ-3σ, μ-2σ, ..., μ+3σ
+
+    max_regrets: dict[str, float] = {}
+    for name, loss_fn in actions:
+        max_r = 0.0
+        for t in thetas:
+            # 该 θ 下的最优动作
+            losses_at_t = [(n, fn(t)) for n, fn in actions]
+            min_loss = min(l for _, l in losses_at_t)
+            regret = loss_fn(t) - min_loss
+            max_r = max(max_r, regret)
+        max_regrets[name] = max_r
+
+    best = min(max_regrets, key=max_regrets.get)
+    return DecisionResult(
+        chosen_action=best,
+        criterion=DecisionCriterion.MINIMAX_REGRET,
+        rationale=f"Minimax Regret: 选 '{best}' (最大后悔={max_regrets[best]:.4f})",
+        risk_metrics={"max_regrets": max_regrets, "theta_range": [thetas[0], thetas[-1]]},
+    )
+
+
+# ── 4. 鲁棒优化 ──
+
+
+def _decide_robust(
+    fused: FusedEstimate,
+    actions: list[tuple[str, Callable[[float], float]]],
+) -> DecisionResult:
+    """鲁棒优化: 在所有可信的 θ (μ±2σ 内) 中取最坏情况，选其最好的动作。
+
+    这是 Wald 1945 的 Maximin——在不确定性集合内的最坏情况下最大化。
+    不同于 Minimax Regret (比后悔)，这里是比绝对损失。
+    """
+    mu = fused.posterior_mean
+    sigma = max(fused.posterior_variance ** 0.5, 1e-10)
+
+    # 可信区域: μ ± 2σ
+    thetas = [mu - 2 * sigma, mu - sigma, mu, mu + sigma, mu + 2 * sigma]
+
+    worst_cases: dict[str, float] = {}
+    for name, loss_fn in actions:
+        worst = max(loss_fn(t) for t in thetas)
+        worst_cases[name] = worst
+
+    best = min(worst_cases, key=worst_cases.get)
+    return DecisionResult(
+        chosen_action=best,
+        criterion=DecisionCriterion.ROBUST,
+        rationale=f"鲁棒优化: 选 '{best}' (最坏损失={worst_cases[best]:.4f})",
+        risk_metrics={"worst_case_losses": worst_cases, "credible_region": [thetas[0], thetas[-1]]},
+    )
+
+
+# ── 5. 满意原则 ──
+
+
+def _decide_satisficing(
+    fused: FusedEstimate,
+    actions: list[tuple[str, Callable[[float], float]]],
+    aspiration: float = 0.1,
+) -> DecisionResult:
+    """满意原则: 第一个期望损失 < aspiration 的动作就选它。
+
+    Simon 1956: 人不做最优化——做到"够好"就停。
+    这在大选项空间和时间压力下是最优策略。
+    """
+    mu = fused.posterior_mean
+    for name, loss_fn in actions:
+        exp_loss = loss_fn(mu)
+        if exp_loss < aspiration:
+            return DecisionResult(
+                chosen_action=name,
+                criterion=DecisionCriterion.SATISFICING,
+                rationale=f"满意原则: 选 '{name}' (期望损失={exp_loss:.4f} < {aspiration})",
+                risk_metrics={"aspiration": aspiration, "expected_loss": exp_loss},
+            )
+
+    # 全部达不到 —— 选最接近的那个
+    losses = [(name, loss_fn(mu)) for name, loss_fn in actions]
+    best = min(losses, key=lambda x: x[1])
+    return DecisionResult(
+        chosen_action=best[0],
+        criterion=DecisionCriterion.SATISFICING,
+        rationale=f"满意原则: 无动作达标 → 选损失最低的 '{best[0]}' ({best[1]:.4f})",
+        risk_metrics={"aspiration": aspiration, "best_loss": best[1], "all_exceed": True},
+    )
+
+
+# ── 6. 预防原则 ──
+
+
+def _decide_precautionary(
+    fused: FusedEstimate,
+    actions: list[tuple[str, Callable[[float], float]]],
+    ctx: DecisionContext,
+) -> DecisionResult:
+    """预防原则: 除非能证明安全，否则不行动。
+
+    举证责任在行动方。每个动作必须证明 P(损失 > 0) < α。
+    如果有动作通过，选其中期望损失最小的。
+    如果全部未通过 → 选 "no_action" (不行动)。
+    """
+    mu = fused.posterior_mean
+    sigma = max(fused.posterior_variance ** 0.5, 1e-10)
+
+    proven_safe: list[tuple[str, float]] = []
+    for name, loss_fn in actions:
+        prob_any_loss = _prob_exceeds(0.0, fused) if loss_fn(mu) > 0 else 0.0
+        # 更精确: 采样估计 P(L > 0)
+        violations = 0
+        n_samples = 200
+        for _ in range(n_samples):
+            if loss_fn(mu + sigma * _box_muller()) > 0.0:
+                violations += 1
+        prob_loss = violations / n_samples
+
+        exp_loss = loss_fn(mu)
+        if prob_loss < ctx.alpha:
+            proven_safe.append((name, exp_loss))
+
+    if proven_safe:
+        best = min(proven_safe, key=lambda x: x[1])[0]
+        return DecisionResult(
+            chosen_action=best,
+            criterion=DecisionCriterion.PRECAUTIONARY,
+            rationale=f"预防原则: 选 '{best}' (安全已证明, P(损失>0)<{ctx.alpha})",
+            risk_metrics={"proven_safe": True},
+        )
+
+    # 无动作能证明安全 → 不行动
+    return DecisionResult(
+        chosen_action="no_action",
+        criterion=DecisionCriterion.PRECAUTIONARY,
+        rationale=(
+            f"预防原则: 所有动作均不能证明安全性 (α={ctx.alpha})。不行动。"
+            f"举证责任在行动方——需更多证据才能执行。"
+        ),
+        risk_metrics={"proven_safe": False, "all_rejected": True},
+    )
+
+
+# ── 随机数辅助 ──
+
+# Box-Muller 变换——零外部依赖的标准正态采样
+_box_muller_cache: list[float] = []
+
+
+def _box_muller() -> float:
+    """Box-Muller 标准正态采样。缓存第二个值，交替返回。"""
+    global _box_muller_cache
+    if _box_muller_cache:
+        return _box_muller_cache.pop()
+    u1 = (hash(str(time.time())) % 1000000 + 1) / 1000001  # 简单 PRNG 近似
+    u2 = (hash(str(time.time() + 1)) % 1000000 + 1) / 1000001
+    r = math.sqrt(-2.0 * math.log(max(u1, 1e-10)))
+    theta = 2.0 * math.pi * u2
+    _box_muller_cache.append(r * math.sin(theta))
+    return r * math.cos(theta)
+
+
+# ══ 主入口 ══
+
+
+def decide(
+    fused: FusedEstimate,
+    actions: list[tuple[str, Callable[[float], float]]],
+    ctx: DecisionContext | None = None,
+    *,
+    aspiration: float = 0.1,
+) -> DecisionResult:
+    """决策引擎——同一个后验，根据场景利害选择如何行动。
+
+    Args:
+        fused: 贝叶斯融合后的后验估计
+        actions: [(动作名, 损失函数 θ→loss), ...]
+        ctx: 决策场景的利害关系 (None = 低风险默认)
+        aspiration: 满意原则的阈值 (仅 SATISFICING 使用)
+
+    Returns:
+        DecisionResult — 包含所选动作、使用的标准、理由、风险指标
+
+    Example:
+        # 温度传感器后验 84.92 ± 0.10, 安全阈值 85°C
+        fused = bayesian_fuse([...])
+
+        def continue_run(theta): return max(0.0, (theta - 85.0) / 10.0)
+        def reduce_power(theta): return 0.3  # 降功率固定代价 0.3
+        def emergency_stop(theta): return 1.0  # 紧急停机代价 1.0
+
+        result = decide(
+            fused,
+            [("继续", continue_run), ("降功率", reduce_power), ("停机", emergency_stop)],
+            DecisionContext.high_stakes(),
+        )
+        # → 如果高风险: PRECAUTIONARY → "降功率" 或 "停机"
+        # → 如果低风险: EXPECTED_UTILITY → "继续"
+    """
+    if ctx is None:
+        ctx = DecisionContext.low_stakes()
+
+    criterion = select_criterion(ctx)
+
+    if criterion == DecisionCriterion.EXPECTED_UTILITY:
+        return _decide_eum(fused, actions)
+    elif criterion == DecisionCriterion.SAFETY_FIRST:
+        return _decide_safety_first(fused, actions, ctx)
+    elif criterion == DecisionCriterion.MINIMAX_REGRET:
+        return _decide_minimax_regret(fused, actions)
+    elif criterion == DecisionCriterion.ROBUST:
+        return _decide_robust(fused, actions)
+    elif criterion == DecisionCriterion.SATISFICING:
+        return _decide_satisficing(fused, actions, aspiration)
+    elif criterion == DecisionCriterion.PRECAUTIONARY:
+        return _decide_precautionary(fused, actions, ctx)
+    else:
+        raise ValueError(f"未知决策标准: {criterion}")
