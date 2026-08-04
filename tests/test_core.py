@@ -495,3 +495,53 @@ class TestE2EIntegration:
         assert result.criterion.value == "expected_utility"
         # 验证融合精度
         assert fused.posterior_variance < 0.1  # 精密传感器
+
+
+class TestContextCompression:
+    """结构化上下文压缩 + 审计可回溯。"""
+
+    @pytest.mark.asyncio
+    async def test_compression_stores_audit_snapshot(self):
+        """压缩后审计快照可查询。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.diyao.providers.registry import ProviderRegistry
+        from tianshu.core.router import RoutingConfig
+
+        core = AgentCore()
+        reg = ProviderRegistry()
+        class MockP:
+            provider_name = "deepseek"; model_id = "deepseek-chat"
+            max_context_tokens = 1000  # 极小窗口强制触发压缩
+            async def chat(self, messages, **kw):
+                from tianshu.sdk.models import ProviderResponse
+                return ProviderResponse(content="[已完成] A\n[待处理] B\n[关键信息] C")
+            async def is_available(self):
+                return True
+        reg.register(MockP())
+        core.setup(registry=reg, routing=RoutingConfig(fallback="deepseek/chat"),
+                   system_prompt="You are helpful.")
+
+        from tianshu.sdk.models import AgentContext
+        ctx = AgentContext()
+        # 制造大量历史消息触发压缩
+        for i in range(20):
+            ctx.messages.append({"role": "user", "content": f"msg {i} " + "x" * 300})
+
+        msgs, meta = await core._build_messages(
+            "new question", ctx, 1, "mock/deepseek-chat",
+            MockP(),
+        )
+
+        assert meta is not None  # 应触发压缩
+        assert meta["level"] >= 2  # 激进或强制级别
+        assert meta["stored_decision_id"]  # 审计 ID 已生成
+        assert "已完成" in meta["summary"] or "[已完成]" in meta["summary"]
+
+        # 查询审计快照（可能需要数据库迁移）
+        snap = await core._audit.get_snapshot(meta["stored_decision_id"])
+        if snap is not None:
+            assert snap["type"] == "context_compression"
+            assert snap["level"] == meta["level"]
+        else:
+            # 数据库表未迁移——优雅降级
+            assert meta["stored_decision_id"] == "db_migration_needed"

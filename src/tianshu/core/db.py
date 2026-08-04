@@ -107,6 +107,10 @@ class Database:
             model TEXT DEFAULT '', created_by TEXT DEFAULT '',
             created_at REAL)""")
 
+        # ── 审计快照（轻量级，用于压缩记录等）──
+        await conn.execute("""CREATE TABLE IF NOT EXISTS audit_snapshots (
+            decision_id TEXT PRIMARY KEY, data TEXT, created_at REAL)""")
+
     async def _migrate(self) -> None:
         """Schema 迁移。"""
         conn = self._conn

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from ..sdk.models import AuditRecord, ProvenanceEvaluation
@@ -69,3 +70,28 @@ class AuditService:
 
     async def count(self) -> int:
         return await self._store.count()
+
+    async def store_snapshot(self, decision_id: str, data: dict) -> None:
+        """存储轻量级快照——压缩记录、中间状态等。"""
+        import json, aiosqlite
+        async with aiosqlite.connect(self._store._db_path) as db:
+            await db.execute(
+                """INSERT OR REPLACE INTO audit_snapshots (decision_id, data, created_at)
+                   VALUES (?, ?, ?)""",
+                (decision_id, json.dumps(data, ensure_ascii=False), time.time()),
+            )
+            await db.commit()
+
+    async def get_snapshot(self, decision_id: str) -> dict | None:
+        """查询快照。表不存在时优雅降级。"""
+        import json, aiosqlite
+        try:
+            async with aiosqlite.connect(self._store._db_path) as db:
+                cursor = await db.execute(
+                    "SELECT data FROM audit_snapshots WHERE decision_id = ?",
+                    (decision_id,),
+                )
+                row = await cursor.fetchone()
+            return json.loads(row[0]) if row else None
+        except Exception:
+            return None
