@@ -57,7 +57,14 @@ src/tianshu/
 
 ## 五、待完成
 
-**P0 (本周)**
+**P0（本周）** ✅ 已完成 2026-08-04
+- [x] pip 包规范：__version__ 统一 0.2.0，requirements.txt 同步
+- [x] 模块导出：6 个 __init__.py 补齐 __all__
+- [x] 配置热加载：CLI /reload + Server POST /admin/reload
+- [x] 错误友好化：API/网络/鉴权/限流 4 类中文提示
+- [x] CI 完善：pip install -e .[all] + pytest --tb=short
+
+**剩余 P0**
 - [ ] Android APP 跑通(WebView加载聊天页)
 - [ ] 服务器部署登录鉴权
 - [ ] E2E 集成测试(至少1条: 搜索→浏览→总结)
