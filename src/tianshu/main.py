@@ -536,9 +536,6 @@ def _main_sync() -> None:
         from tianshu.sdk.models import AgentRequest, ToolCallConfirm
         from tianshu.gateway.cli import _handle_confirm
 
-        _rich_console.print(
-            f"[bold #60a5fa]▸[/bold #60a5fa] {user_input}"
-        )
         if resolved_input != user_input:
             _rich_console.print("  [dim]已读取 @ 引用的文件[/dim]")
         _rich_console.print()
