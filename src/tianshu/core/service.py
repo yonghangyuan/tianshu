@@ -33,6 +33,7 @@ from ..sdk.trigram import (
     MessagePriority, MessageDirection,
     AuditSixQuestions, validate_message,
     DecisionContext, DecisionCriterion, decide, FusedEstimate,
+    WorldLevel, TIAN_STRATEGY,
 )
 from .router import ModelRouter, RoutingConfig
 from .status import route as _s_route, tool as _s_tool, done as _s_done, error as _s_error
@@ -1164,7 +1165,19 @@ class AgentCore:
         tool_info = self._tool_registry.get(tool_name) if self._tool_registry else None
         stakes = tool_info.stakes if tool_info else None
 
-        if stakes is not None and (
+        # 世界层级感知: 天层根据 Agent 所处的世界层级切换策略
+        world_level = (
+            tool_info.world_level if tool_info and hasattr(tool_info, 'world_level')
+            else WorldLevel.MEASURABLE
+        )
+        tian_strategy = TIAN_STRATEGY.get(world_level, TIAN_STRATEGY[WorldLevel.MEASURABLE])
+
+        # UNOBSERVABLE → 天层沉默，不做任何风险评估
+        if world_level == WorldLevel.UNOBSERVABLE:
+            risk_blocked = False
+            risk_passed = False  # 不阻止，但标记"无判断能力"
+
+        elif stakes is not None and (
             stakes.reversibility > 0.6 or stakes.max_loss > 0.5
         ):
             # 需要风险评估——构建简化后验

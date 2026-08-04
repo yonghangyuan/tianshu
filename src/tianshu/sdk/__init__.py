@@ -21,8 +21,9 @@ from .models import (
 )
 
 from .trigram import (
-    # Layer
+    # Layer + World Model
     Layer, LayerPermission,
+    WorldLevel, TIAN_STRATEGY, REN_STRATEGY, assess_world_level,
     # Message
     TrigramMessage, MessagePriority, MessageDirection,
     AgentRef, MessageConstraints,
@@ -67,6 +68,8 @@ __all__ = [
     "ToolCallResult", "ToolCallConfirm", "StreamDone", "StreamError",
     # Trigram — Layer
     "Layer", "LayerPermission",
+    # Trigram — World Model
+    "WorldLevel", "TIAN_STRATEGY", "REN_STRATEGY", "assess_world_level",
     # Trigram — Message
     "TrigramMessage", "MessagePriority", "MessageDirection",
     "AgentRef", "MessageConstraints",

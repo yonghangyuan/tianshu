@@ -15,6 +15,15 @@ except ImportError:
     DecisionContext = None  # type: ignore
 
 
+def _import_world_level(level: int) -> Any:
+    """延迟导入 WorldLevel 避免循环依赖。"""
+    try:
+        from ..sdk.trigram import WorldLevel
+        return WorldLevel(level)
+    except ImportError:
+        return level  # fallback
+
+
 def _stakes_for_permission(permission: int) -> Any:
     """根据权限级别自动推断场景利害。
 
@@ -45,6 +54,7 @@ class ToolInfo:
         skill_name: str = "",
         category: str = "general",
         stakes: Any = None,  # DecisionContext | None
+        world_level: Any = None,  # WorldLevel | None
     ):
         self.name = name
         self.description = description
@@ -57,6 +67,15 @@ class ToolInfo:
         self.error_count: int = 0
         # 场景利害: 未指定时根据权限自动推断
         self.stakes = stakes if stakes is not None else _stakes_for_permission(permission)
+        # 世界层级: 未指定时根据权限自动推断
+        if world_level is not None:
+            self.world_level = world_level
+        elif permission >= 3:
+            self.world_level = _import_world_level(3)  # DANGER → CONTROLLABLE
+        elif permission >= 2:
+            self.world_level = _import_world_level(2)  # WRITE → MEASURABLE
+        else:
+            self.world_level = _import_world_level(1)  # SAFE/READ → OBSERVABLE
 
     def to_openai_schema(self) -> dict:
         return {

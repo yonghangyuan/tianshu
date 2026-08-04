@@ -62,6 +62,106 @@ class Layer(Enum):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 一附、四层世界模型 — 系统对自身认知能力的自知
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class WorldLevel(IntEnum):
+    """四层世界——以系统为主体的认知层级。
+
+    不是世界的客观属性，是系统对自身在某领域认知能力的诚实评估。
+
+    UNOBSERVABLE (0): 系统完全不知道这个领域的存在。无传感器，无模型。
+        → 天层策略: 沉默——不 OVERRIDE，不仲裁，不做任何判断
+        → 人层策略: Minimax Regret——选最坏情况下损失最小的动作
+
+    OBSERVABLE (1):   能感知现象，但无法量化。有粗精度信号。
+        → 天层策略: 定性门槛——"偏高"持续 N 次→升级
+        → 人层策略: 案例推理——找历史上最像的模式，照搬处理方式
+
+    MEASURABLE (2):   能量化、建模、预测。已知 Q 和 R。
+        → 天层策略: 贝叶斯仲裁——bayesian_fuse()，逆方差加权
+        → 人层策略: 期望效用最大化——基于后验分布的最优决策
+
+    CONTROLLABLE (3): 不仅能预测，还能改变世界状态。有执行器。
+        → 天层策略: 行动前否决 + 行动后验证——AuditSixQuestions
+        → 人层策略: 闭环调度——执行→验证→修正，不是一次性命令
+    """
+
+    UNOBSERVABLE = 0
+    OBSERVABLE = 1
+    MEASURABLE = 2
+    CONTROLLABLE = 3
+
+    def label(self) -> str:
+        return {
+            WorldLevel.UNOBSERVABLE: "不可观",
+            WorldLevel.OBSERVABLE: "可观",
+            WorldLevel.MEASURABLE: "可测",
+            WorldLevel.CONTROLLABLE: "可控",
+        }[self]
+
+
+# 天层策略矩阵: 三爻中的天层 × 四层世界 → 具体行为
+TIAN_STRATEGY = {
+    WorldLevel.UNOBSERVABLE: {
+        "name": "silence",
+        "desc": "沉默——不 OVERRIDE，不仲裁，不做任何判断",
+        "allow_override": False,
+        "allow_arbitrate": False,
+    },
+    WorldLevel.OBSERVABLE: {
+        "name": "qualitative_gate",
+        "desc": "定性门槛——观测序列触发状态转移",
+        "allow_override": True,
+        "allow_arbitrate": False,
+    },
+    WorldLevel.MEASURABLE: {
+        "name": "bayesian_arbiter",
+        "desc": "贝叶斯仲裁——bayesian_fuse()，逆方差加权",
+        "allow_override": True,
+        "allow_arbitrate": True,
+    },
+    WorldLevel.CONTROLLABLE: {
+        "name": "pre_post_audit",
+        "desc": "行动前否决 + 行动后验证——AuditSixQuestions 全链路",
+        "allow_override": True,
+        "allow_arbitrate": True,
+    },
+}
+
+# 人层策略矩阵
+REN_STRATEGY = {
+    WorldLevel.UNOBSERVABLE: "minimax_regret",
+    WorldLevel.OBSERVABLE: "case_reasoning",
+    WorldLevel.MEASURABLE: "expected_utility",
+    WorldLevel.CONTROLLABLE: "closed_loop",
+}
+
+
+def assess_world_level(
+    has_sensors: bool = False,
+    has_quantitative_model: bool = False,
+    has_actuators: bool = False,
+) -> WorldLevel:
+    """Agent 自评估——诚实确定自己在四层模型中的位置。
+
+    一个 Agent 应该诚实声明自己的能力边界：
+      - 没有任何感知 → UNOBSERVABLE (该 Agent 不应存在)
+      - 有粗精度感知，无定量模型 → OBSERVABLE
+      - 有定量模型(Q和R已知) → MEASURABLE
+      - 还有执行器能改变状态 → CONTROLLABLE
+    """
+    if has_actuators and has_quantitative_model:
+        return WorldLevel.CONTROLLABLE
+    if has_quantitative_model:
+        return WorldLevel.MEASURABLE
+    if has_sensors:
+        return WorldLevel.OBSERVABLE
+    return WorldLevel.UNOBSERVABLE
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 二、跨层消息协议 (Cross-Layer Message Protocol)
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -540,6 +640,7 @@ class AgentRegistration:
 
     ref: AgentRef
     time_scale: TimeScale
+    world_level: WorldLevel = WorldLevel.MEASURABLE  # Agent 对自身认知能力的诚实评估
     permissions: list[LayerPermission] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)
     tool_names: list[str] = field(default_factory=list)
@@ -573,6 +674,7 @@ def urban_city_brain_agents() -> list[AgentRegistration]:
         AgentRegistration(
             ref=AgentRef(Layer.DI, "traffic_sensor"),
             time_scale=TimeScale(tick_ms=1000, decay=InfoDecayConfig(half_life_ms=30_000)),
+            world_level=WorldLevel.MEASURABLE,
             permissions=[LayerPermission.EXECUTE],
             capabilities=["vehicle_detection", "flow_count"],
             tool_names=["read_intersection", "count_vehicles"],
