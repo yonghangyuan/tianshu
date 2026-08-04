@@ -118,7 +118,7 @@ def parse_skill_md(raw: str) -> tuple[dict, str] | None:
     except Exception:
         return None
 
-    if not meta.get("name"):
+    if not isinstance(meta, dict) or not meta.get("name"):
         return None
 
     return meta, parts[2].strip()
