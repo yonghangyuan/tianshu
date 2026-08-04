@@ -7,12 +7,35 @@
 from .models import (
     # Provider
     ToolCall, TokenUsage, ProviderResponse,
+    # Permission
+    PermissionLevel,
     # Skill
     SkillDef, SkillTool,
     # Audit
     AuditLevel, AuditRecord, ProvenanceInput, ProvenanceCommand, ProvenanceEvaluation,
     # Agent
     AgentRequest, AgentResponse, AgentTurn, AgentContext,
+    # Streaming
+    StreamEvent, ContentDelta, ReasoningDelta, ToolCallStart,
+    ToolCallResult, ToolCallConfirm, StreamDone, StreamError,
+)
+
+from .trigram import (
+    # Layer
+    Layer, LayerPermission,
+    # Message
+    TrigramMessage, MessagePriority, MessageDirection,
+    AgentRef, MessageConstraints,
+    # Time
+    TimeScale, InfoDecayConfig, SyncMode,
+    # Audit
+    AuditSixQuestions, AuditCompleteness,
+    # Registration
+    AgentRegistration,
+    # Scenarios
+    urban_city_brain_agents, industrial_iot_agents,
+    # Validation
+    validate_message,
 )
 
 from .provider import BaseProvider
@@ -20,10 +43,30 @@ from .provider import BaseProvider
 __all__ = [
     # Provider
     "ToolCall", "TokenUsage", "ProviderResponse", "BaseProvider",
+    # Permission
+    "PermissionLevel",
     # Skill
     "SkillDef", "SkillTool",
-    # Audit
+    # Audit (models)
     "AuditLevel", "AuditRecord", "ProvenanceInput", "ProvenanceCommand", "ProvenanceEvaluation",
+    # Audit (trigram)
+    "AuditSixQuestions", "AuditCompleteness",
     # Agent
     "AgentRequest", "AgentResponse", "AgentTurn", "AgentContext",
+    # Streaming
+    "StreamEvent", "ContentDelta", "ReasoningDelta", "ToolCallStart",
+    "ToolCallResult", "ToolCallConfirm", "StreamDone", "StreamError",
+    # Trigram — Layer
+    "Layer", "LayerPermission",
+    # Trigram — Message
+    "TrigramMessage", "MessagePriority", "MessageDirection",
+    "AgentRef", "MessageConstraints",
+    # Trigram — Time
+    "TimeScale", "InfoDecayConfig", "SyncMode",
+    # Trigram — Registration
+    "AgentRegistration",
+    # Trigram — Scenarios
+    "urban_city_brain_agents", "industrial_iot_agents",
+    # Trigram — Validation
+    "validate_message",
 ]
