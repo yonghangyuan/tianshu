@@ -528,6 +528,35 @@ def _main_sync() -> None:
         elif user_input in ("clear", "/clear"):
             _rich_console.clear()
             continue
+        elif user_input.startswith("/orchestrate ") or user_input.startswith("orchestrate "):
+            task = user_input.split(maxsplit=1)[1] if " " in user_input else user_input
+            _rich_console.print(f"[bold cyan]多 Agent 编排模式[/bold cyan]")
+            plan = asyncio.run(core.orchestrator.plan(task))
+            _rich_console.print(plan.summary())
+            _rich_console.print("\n[dim]正在执行...[/dim]")
+            # 简单串行执行
+            for step in plan.steps:
+                agent = asyncio.run(core.orchestrator.create_agent(
+                    step.agent_name, step.tools_allowed, "deepseek-v4-flash",
+                ))
+                msg = asyncio.run(core.orchestrator.dispatch(agent, step.task, deps=step.depends_on))
+                result = msg.payload.get("result", str(msg.intent)[:200]) if msg.payload else str(msg.intent)
+                _rich_console.print(f"  [{step.agent_name}] {result[:150]}")
+                asyncio.run(core.orchestrator.destroy(agent))
+            _rich_console.print("\n[dim]编排完成[/dim]")
+            continue
+        elif user_input in ("agents", "/agents"):
+            _rich_console.print(core.orchestrator.status_summary())
+            continue
+        elif user_input.startswith("/plan ") or user_input.startswith("plan "):
+            task = user_input.split(maxsplit=1)[1] if " " in user_input else user_input
+            if not task:
+                _rich_console.print("[dim]用法: /plan <任务描述>[/dim]")
+                continue
+            plan = asyncio.run(core.orchestrator.plan(task))
+            _rich_console.print(plan.summary())
+            _rich_console.print("\n[dim]以上为计划，未执行。使用 /orchestrate 执行。[/dim]")
+            continue
 
         # ── @file 文件引用解析 ──
         resolved_input = _resolve_at_refs(user_input)

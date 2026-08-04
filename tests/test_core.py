@@ -596,3 +596,45 @@ class TestAgentScheduler:
 
         # 快速 Agent 的 tick 次数应明显多于慢速
         assert len(fast_ticks) > len(slow_ticks) * 1.5
+
+
+class TestOrchestrator:
+    """人层调度器——创建/分发/收集/销毁子 Agent。"""
+
+    @pytest.mark.asyncio
+    async def test_create_and_destroy(self):
+        """创建子 Agent → 可查询 → 销毁。"""
+        from tianshu.renyao.orchestrator import Orchestrator
+        orch = Orchestrator()
+        a = await orch.create_agent("test", ["web_search"])
+        assert orch.active_count == 1
+        assert orch.by_name["test"] == a
+        await orch.destroy(a)
+        assert orch.active_count == 0
+
+    @pytest.mark.asyncio
+    async def test_plan_generates_steps(self):
+        """计划: AI 分析 → 结构化步骤。"""
+        from tianshu.renyao.orchestrator import Orchestrator
+        orch = Orchestrator()
+        plan = await orch.plan("搜索 Rust 异步 runtime 对比并写报告")
+        assert plan.goal
+        assert len(plan.steps) >= 1
+        assert plan.topology in ("serial", "parallel", "pipeline")
+
+    def test_assess_complexity_detects_multistep(self):
+        """复杂度评估: /orchestrate 强制触发, /direct 强制不触发, 短句不触发。"""
+        from tianshu.renyao.orchestrator import Orchestrator
+        orch = Orchestrator()
+        assert orch.assess_complexity("/orchestrate do complex research")
+        assert not orch.assess_complexity("/direct just chat")
+        assert not orch.assess_complexity("hello")
+        assert not orch.assess_complexity("hi")
+
+    def test_plan_step_dependencies(self):
+        """PlanStep: 依赖关系正确建模。"""
+        from tianshu.renyao.orchestrator import PlanStep
+        s1 = PlanStep("A", "搜索", tools_allowed=["search"])
+        s2 = PlanStep("B", "分析", depends_on=["A"], tools_allowed=["read"])
+        assert s2.depends_on == ["A"]
+        assert "A" not in s1.depends_on

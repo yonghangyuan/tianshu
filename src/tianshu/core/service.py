@@ -28,6 +28,8 @@ from ..renyao.skills.plugin import PluginManager
 from ..memory.service import MemoryService
 from ..tianyao.service import AuditService
 from ..tianyao.scheduler import CronScheduler
+from ..tianyao.agent_scheduler import AgentScheduler as _AgentScheduler
+from ..renyao.orchestrator import Orchestrator
 from ..sdk.trigram import (
     Layer, AgentRef, TrigramMessage, MessageConstraints,
     MessagePriority, MessageDirection,
@@ -109,6 +111,8 @@ class AgentCore:
         self._memory = MemoryService()
         self._plugins = PluginManager()
         self._cron = CronScheduler()
+        self._agent_scheduler = _AgentScheduler()
+        self._orchestrator = Orchestrator(self)
         self._system_prompt = ""
 
         # 标记
@@ -174,6 +178,7 @@ class AgentCore:
         # 加载 Plugins + Cron
         self._plugins.load_all()
         self._cron.load()
+        self._orchestrator.setup(self)
 
         self._ready = True
 
@@ -204,6 +209,14 @@ class AgentCore:
     @property
     def cron(self) -> CronScheduler:
         return self._cron
+
+    @property
+    def agent_scheduler(self) -> _AgentScheduler:
+        return self._agent_scheduler
+
+    @property
+    def orchestrator(self) -> Orchestrator:
+        return self._orchestrator
 
     @property
     def last_reasoning(self) -> str:
