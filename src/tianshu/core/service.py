@@ -744,6 +744,72 @@ class AgentCore:
                                 output=f"策略确认被拒: {decision.policy_name}", elapsed_ms=0)
                             continue
 
+                # ── 天枢三层闸门: 决策引擎风险评估 ──
+                # 仅高风险工具触发。低风险直接跳过，零开销。
+                tool_info = self._tool_registry.get(name) if self._tool_registry else None
+                stakes = tool_info.stakes if tool_info else None
+                risk_blocked = False
+
+                if stakes is not None and (
+                    stakes.reversibility > 0.6 or stakes.max_loss > 0.5
+                ):
+                    risk_perm = float(tool_info.permission) if tool_info else float(perm)
+                    risk_posterior = FusedEstimate(
+                        posterior_mean=risk_perm,
+                        posterior_variance=1.0 - min(stakes.model_confidence, 0.99),
+                        confidence_95=(risk_perm - 1.0, risk_perm + 1.0),
+                        source_count=1,
+                    )
+
+                    def _exec_loss(theta: float) -> float:
+                        return stakes.max_loss * (theta / 3.0)
+
+                    def _skip_loss(theta: float) -> float:
+                        return 0.1
+
+                    risk_decision = decide(
+                        risk_posterior,
+                        [("execute", _exec_loss), ("skip", _skip_loss)],
+                        stakes,
+                    )
+
+                    if risk_decision.chosen_action in ("skip", "no_action"):
+                        risk_blocked = True
+                        result_text = (
+                            f"⛔ 天层风险评估否决 [{risk_decision.criterion.value}]: "
+                            f"{risk_decision.rationale}"
+                        )
+                        yield ToolCallResult(
+                            tool_name=name,
+                            success=False,
+                            output=result_text,
+                            elapsed_ms=0,
+                        )
+                        tool_results.append({
+                            "name": name,
+                            "success": False,
+                            "output": result_text,
+                        })
+                        # 反馈否决给 LLM
+                        deny_msg: dict[str, Any] = {
+                            "role": "assistant",
+                            "content": round_content or "",
+                            "tool_calls": [{
+                                "id": tc["id"],
+                                "type": "function",
+                                "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args)},
+                            }],
+                        }
+                        if round_reasoning:
+                            deny_msg["reasoning_content"] = round_reasoning
+                        messages.append(deny_msg)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": result_text,
+                        })
+                        continue
+
                 # ── 执行工具 ──
                 t0_tool = time.time()
                 try:
