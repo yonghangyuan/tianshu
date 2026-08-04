@@ -28,6 +28,11 @@ from ..renyao.skills.plugin import PluginManager
 from ..memory.service import MemoryService
 from ..tianyao.service import AuditService
 from ..tianyao.scheduler import CronScheduler
+from ..sdk.trigram import (
+    Layer, AgentRef, TrigramMessage, MessageConstraints,
+    MessagePriority, MessageDirection,
+    AuditSixQuestions, validate_message,
+)
 from .router import ModelRouter, RoutingConfig
 from .status import route as _s_route, tool as _s_tool, done as _s_done, error as _s_error
 
@@ -1000,3 +1005,137 @@ class AgentCore:
                 for r in results
             )
         return await self._skills.execute(name, args)
+
+    # ── 三爻通道 demo ─────────────────────────────────────────────
+
+    async def execute_via_trigram(
+        self, tool_name: str, args: dict, user_intent: str = ""
+    ) -> dict:
+        """[Demo] 通过天·人·地三层通道执行一次工具调用。
+
+        这是三爻接口规范的运行时 demo，不替代现有的 _execute_tool()。
+        只演示一条工具调用如何经过三层闸门。
+
+        流程:
+          地(search skill) → 人(AgentCore调度) → 天(PolicyEngine审查)
+              ↓                                       │
+              │              ← OVERRIDE 否决 ← ───────┘ (违规时)
+              ↓
+           执行 → 审计六问记录
+
+        Returns:
+            {
+                "allowed": bool,
+                "result": str,
+                "message_chain": [TrigramMessage, ...],
+                "audit": dict,
+            }
+        """
+        chain: list[TrigramMessage] = []
+
+        # Agent 标识
+        di_ref = AgentRef(Layer.DI, tool_name)
+        ren_ref = AgentRef(Layer.REN, "agent_core")
+        tian_ref = AgentRef(Layer.TIAN, "policy_engine")
+
+        intent = user_intent or f"执行工具: {tool_name}({_brief_args(args)})"
+
+        # ── 第一道闸门: 地→人 (工具请求执行) ──
+        msg_di_to_ren = TrigramMessage.create(
+            source=di_ref, target=ren_ref,
+            intent=intent,
+            payload={"tool_name": tool_name, "args": args},
+        )
+        errors = validate_message(msg_di_to_ren)
+        if errors:
+            return {
+                "allowed": False,
+                "result": f"消息校验失败: {'; '.join(errors)}",
+                "message_chain": chain,
+                "audit": None,
+            }
+        chain.append(msg_di_to_ren)
+
+        # ── 第二道闸门: 人→天 (请求权限审查) ──
+        perm = self._get_tool_permission(tool_name)
+        msg_ren_to_tian = TrigramMessage.create(
+            source=ren_ref, target=tian_ref,
+            intent=f"请求权限审查: {tool_name} (PermissionLevel={perm})",
+            payload={"tool_name": tool_name, "args": args, "permission_level": perm},
+            constraints=MessageConstraints(permission_level=perm),
+            priority=MessagePriority.URGENT if perm >= 2 else MessagePriority.NORMAL,
+        )
+        chain.append(msg_ren_to_tian)
+
+        # ── 第三道闸门: 天层审查 (PolicyEngine) ──
+        if self._policy_engine and self._policy_engine.enabled:
+            decision = self._policy_engine.evaluate(tool_name, args)
+            if decision.action == "deny":
+                override = TrigramMessage.create(
+                    source=tian_ref, target=ren_ref,
+                    intent=f"否决: {decision.message or decision.policy_name}",
+                    priority=MessagePriority.OVERRIDE,
+                )
+                chain.append(override)
+                audit = AuditSixQuestions.record(
+                    agent=tian_ref,
+                    info=[f"tool={tool_name}", f"args={_brief_args(args)}"],
+                    alternatives=["execute", "deny"],
+                    rules=[decision.policy_name],
+                    decision=f"deny: {decision.message or decision.policy_name}",
+                )
+                return {
+                    "allowed": False,
+                    "result": f"天层否决: {decision.message or decision.policy_name}",
+                    "message_chain": [m.to_dict() for m in chain],
+                    "audit": audit.to_dict(),
+                }
+
+        # ── 执行 ──
+        try:
+            result = await self._execute_tool(tool_name, args)
+            success = True
+        except Exception as e:
+            result = str(e)
+            success = False
+
+        # ── 结果回报: 地→人 ──
+        msg_result = TrigramMessage.create(
+            source=di_ref, target=ren_ref,
+            intent=f"{'完成' if success else '失败'}: {tool_name}",
+            payload={"tool_name": tool_name, "success": success,
+                     "result": str(result)[:500]},
+        )
+        chain.append(msg_result)
+
+        # ── 审计六问 ──
+        audit = AuditSixQuestions.record(
+            agent=di_ref,
+            info=[f"tool={tool_name}", f"args={_brief_args(args)}"],
+            alternatives=["execute", "skip"],
+            rules=(
+                [r.get("name", "") for r in self._policy_engine.list_rules()]
+                if self._policy_engine else []
+            ),
+            decision=f"{'execute' if success else 'fail'}: {tool_name}",
+            outcome=str(result)[:200],
+        )
+
+        return {
+            "allowed": True,
+            "result": str(result),
+            "message_chain": [m.to_dict() for m in chain],
+            "audit": audit.to_dict(),
+        }
+
+
+def _brief_args(args: dict) -> str:
+    """参数摘要——防止 args 过长撑爆审计记录。"""
+    items = []
+    for k, v in args.items():
+        s = str(v)
+        if len(s) > 60:
+            s = s[:57] + "..."
+        items.append(f"{k}={s}")
+    return ", ".join(items) if items else "(none)"
+
