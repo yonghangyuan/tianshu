@@ -360,6 +360,8 @@ class Orchestrator:
             ("搜索", "总结"), ("搜索", "分析"), ("搜索", "写"),
             ("分析", "报告"), ("分析", "写"), ("比较", "报告"),
             ("研究", "总结"), ("翻译", "保存"),
+            ("search", "analyze"), ("search", "summarize"), ("search", "write"),
+            ("analyze", "report"), ("analyze", "write"), ("study", "summarize"),
         ]
         for a, b in patterns:
             if a in user_input and b in user_input:
