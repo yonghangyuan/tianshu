@@ -30,6 +30,7 @@ from ..tianyao.service import AuditService
 from ..tianyao.scheduler import CronScheduler
 from ..tianyao.agent_scheduler import AgentScheduler as _AgentScheduler
 from ..renyao.orchestrator import Orchestrator
+from .context_engine import ContextEngine
 from ..sdk.trigram import (
     Layer, AgentRef, TrigramMessage, MessageConstraints,
     MessagePriority, MessageDirection,
@@ -113,6 +114,7 @@ class AgentCore:
         self._cron = CronScheduler()
         self._agent_scheduler = _AgentScheduler()
         self._orchestrator = Orchestrator(self)
+        self._context_engine = ContextEngine()
         self._system_prompt = ""
 
         # 标记
@@ -178,6 +180,7 @@ class AgentCore:
         # 加载 Plugins + Cron
         self._plugins.load_all()
         self._cron.load()
+        self._context_engine.system_prompt = system_prompt
         self._orchestrator.setup(self)
 
         self._ready = True
@@ -973,122 +976,14 @@ class AgentCore:
         level: AuditLevel, provider_info: str,
         provider: Any = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-        """构建消息 + 分级结构化压缩。
-
-        Returns:
-            (messages, compression_meta | None)
-            compression_meta = {"level": int, "before_chars": int, "after_chars": int,
-                                "summary": str, "stored_decision_id": str}
-        """
-        messages: list[dict[str, Any]] = []
-
-        # 系统提示词
-        if self._system_prompt:
-            prompt = self._system_prompt
-            if provider_info:
-                prompt = (
-                    f"## Current Session\n"
-                    f"You are answering via the **{provider_info}** model. "
-                    f"If asked which model you are, say the model name directly.\n\n"
-                    + prompt
-                )
-            messages.append({"role": "system", "content": prompt})
-
-        # 添加上下文历史
-        messages.extend(ctx.messages)
-        messages.append({"role": "user", "content": user_input})
-
-        # ── 分级结构化压缩 ──
-        total_chars = sum(len(str(m.get("content", ""))) for m in messages)
-        estimated_tokens = int(total_chars * 0.4)
-        max_tokens = provider.max_context_tokens if provider else 65536
-        ratio = estimated_tokens / max_tokens if max_tokens > 0 else 0.0
-
-        if ratio > 0.5 and provider and len(ctx.messages) > 6:
-            # 确定压缩级别
-            if ratio > 0.9:
-                comp_level = 3  # 强制: 只保留 system + 最近1轮
-                tail_count = 2
-                max_summary_tokens = 150
-            elif ratio > 0.7:
-                comp_level = 2  # 激进: 保留最近2轮
-                tail_count = 4
-                max_summary_tokens = 250
-            else:
-                comp_level = 1  # 轻量: 保留最近3轮
-                tail_count = 6
-                max_summary_tokens = 300
-
-            head = messages[:1]  # system prompt
-            tail = messages[-tail_count:]
-            middle = messages[1:-tail_count]
-
-            if middle:
-                try:
-                    # 结构化摘要提示
-                    middle_text = "\n".join(
-                        f"[{m['role']}] {str(m.get('content', ''))[:300]}"
-                        for m in middle
-                    )
-                    summary = await provider.chat(
-                        messages=[{
-                            "role": "user",
-                            "content": (
-                                f"将以下对话中间部分总结为三段，用中文：\n"
-                                f"1. [已完成] 用户已解决的问题和已完成的工具调用\n"
-                                f"2. [待处理] 尚未完成、需要继续跟进的事项\n"
-                                f"3. [关键信息] 后续可能需要引用的重要事实、数据、结论\n"
-                                f"每段不超过3条。简洁精准。\n\n"
-                                f"对话:\n{middle_text}"
-                            ),
-                        }],
-                        max_tokens=max_summary_tokens,
-                    )
-                    summary_text = summary.content or "[压缩失败]"
-
-                    # 结构化标签包装
-                    compressed_content = (
-                        f"💾 上下文已压缩 (L{comp_level}, {len(middle)}条→摘要, "
-                        f"{estimated_tokens//1000}K→~{max_summary_tokens}tok)\n"
-                        f"{summary_text[:max_summary_tokens + 50]}"
-                    )
-
-                    compressed = head + [{
-                        "role": "system",
-                        "content": compressed_content,
-                    }] + tail
-
-                    # 存储压缩快照到审计（可在 /audit 回溯）
-                    comp_decision_id = self._audit.generate_id()
-                    try:
-                        await self._audit.store_snapshot(
-                            comp_decision_id,
-                            {
-                                "type": "context_compression",
-                                "level": comp_level,
-                                "ratio": round(ratio, 2),
-                                "before_chars": total_chars,
-                                "after_chars": sum(len(str(m.get("content", ""))) for m in compressed),
-                                "original_middle": middle_text[:2000],
-                                "summary": summary_text,
-                                "timestamp": time.time(),
-                            },
-                        )
-                    except Exception:
-                        comp_decision_id = "db_migration_needed"
-
-                    return compressed, {
-                        "level": comp_level,
-                        "ratio": round(ratio, 2),
-                        "before_chars": total_chars,
-                        "after_chars": sum(len(str(m.get("content", ""))) for m in compressed),
-                        "summary": summary_text[:200],
-                        "stored_decision_id": comp_decision_id,
-                    }
-                except Exception:
-                    pass  # 压缩失败，返回原始消息（不阻塞对话）
-
-        return messages, None
+        """构建消息 → 委托给 ContextEngine。"""
+        return await self._context_engine.assemble(
+            user_input,
+            ctx.messages,
+            provider,
+            self._audit,
+            provider_info=provider_info,
+        )
 
     def _get_tools(self) -> list[dict[str, Any]] | None:
         if self._tool_registry:

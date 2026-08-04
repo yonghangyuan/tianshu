@@ -56,6 +56,18 @@ class MemoryService:
         self._mem_file = self._dir / "MEMORY.md"
         self._user_file = self._dir / "USER.md"
         self._initialized = False
+        # Provider 接口——支持多后端扩展
+        from .provider import SQLiteMemoryProvider
+        self._provider = SQLiteMemoryProvider(base_dir=self._dir)
+
+    @property
+    def provider(self):
+        """当前记忆后端。"""
+        return self._provider
+
+    def set_provider(self, provider) -> None:
+        """替换记忆后端（ChromaDB / Honcho / Mem0 等）。"""
+        self._provider = provider
 
     async def _init(self) -> None:
         if self._initialized:
