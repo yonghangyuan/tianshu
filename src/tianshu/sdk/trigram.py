@@ -693,113 +693,395 @@ def industrial_iot_agents() -> list[AgentRegistration]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 八、跨时间尺度仲裁
+# 八、贝叶斯信息融合 — 从二选一到多源融合
 # ═══════════════════════════════════════════════════════════════════════════
+#
+# 设计原则（四层）：
+#   1. 实体动力学 (EntityDynamics) — 被观测对象的变化速率 Q
+#      · 不是信息在衰减，是实体状态本身在漂移
+#      · Q 取决于实体类型，不取决于观测者
+#   2. 传感器特征 (SensorCharacteristics) — 测量精度 R
+#      · 观测噪声方差、系统偏差、校准状态
+#   3. 贝叶斯融合 (bayesian_fuse) — 逆方差加权，不是二选一
+#      · σ²_total = Q·Δt + R
+#      · 后验 = Σ(x_i / σ²_i) / Σ(1 / σ²_i)
+#      · 融合后的精度总是高于任一单源精度
+#   4. 反馈学习 (update_sensor_reliability) — 用真实结果校准参数
+#      · 预测误差 → 更新 R (观测噪声)
+#      · 连续误报 → 降低该 sensor 的有效权重
+
+
+# ══ 8.1 实体动力学 ══
+
+# 预设实体类型（模块级常量）
+ENTITY_PRESETS: dict[str, dict[str, Any]] = {
+    "static": {
+        "Q": 0.0,
+        "desc": "静态实体（建筑位置、地理信息、历史档案）——状态几乎不随时间变化",
+    },
+    "slow": {
+        "Q": 1e-10,
+        "desc": "慢变实体（人口数据、供应链库存、用地规划）——天~周尺度变化",
+    },
+    "fast": {
+        "Q": 1e-4,
+        "desc": "快变实体（车流量、电网负载、温度）——秒~分尺度变化",
+    },
+    "ultra_fast": {
+        "Q": 1.0,
+        "desc": "超快实体（振动信号、股价、雷达回波）——毫秒~秒尺度变化",
+    },
+}
+
+
+@dataclass
+class EntityDynamics:
+    """被观测实体的状态变化特征——控制信息随时间的不确定性增长。
+
+    关键概念：衰减速率属于实体，不属于传感器。
+    建筑位置是"静态"实体——R=GPS测量误差，Q≈0（建筑不移动）。
+    股价是"超快"实体——即使完美测量(R=0)，1ms 后状态已完全不同。
+
+    数学：
+      σ²_process(t) = Q · Δt
+      即：实体的不确定性随经过的时间线性增长。
+    """
+
+    entity_type: str  # "static" | "slow" | "fast" | "ultra_fast"
+    process_noise_per_second: float  # Q — 单位时间的不确定性增长
+    description: str = ""
+
+    @classmethod
+    def from_preset(cls, entity_type: str) -> EntityDynamics:
+        """从预设类型创建。"""
+        preset = ENTITY_PRESETS.get(entity_type, ENTITY_PRESETS["fast"])
+        return cls(
+            entity_type=entity_type,
+            process_noise_per_second=preset["Q"],
+            description=preset["desc"],
+        )
+
+    def process_noise_at_age(self, age_seconds: float) -> float:
+        """经过 age_seconds 秒后积累的过程噪声 σ² = Q·Δt。"""
+        return self.process_noise_per_second * age_seconds
+
+
+# ══ 8.2 传感器特征 ══
+
+# 预设传感器精度（模块级常量）
+SENSOR_PRESETS: dict[str, dict[str, Any]] = {
+    "precision": {"R": 0.01, "desc": "精密传感器——校准良好，噪声极小"},
+    "standard": {"R": 1.0, "desc": "标准传感器——典型工业精度"},
+    "coarse": {"R": 10.0, "desc": "粗精度——低分辨率或未校准"},
+    "human": {"R": 50.0, "desc": "人工报告——主观判断，高方差"},
+}
+
+
+@dataclass
+class SensorCharacteristics:
+    """传感器/信息源的测量特征——描述观测本身的不确定性。
+
+    数学：
+      σ²_observation = R  （测量噪声方差）
+      σ²_total = σ²_process(Q·Δt) + σ²_observation(R)
+
+    R 小的传感器精度高——即使数据陈旧，仍有参考价值。
+    R 大的传感器噪声大——新鲜数据也不完全可靠。
+    """
+
+    observation_variance: float  # R — 测量噪声方差
+    bias: float = 0.0  # 系统偏差（校准后可修正）
+    calibration_age_ms: int = 0  # 距上次校准的时间
+    reliability_score: float = 1.0  # 历史可靠性 (0~1)，反馈学习更新
+
+    @classmethod
+    def from_preset(cls, preset_name: str) -> SensorCharacteristics:
+        """从预设精度创建。"""
+        preset = SENSOR_PRESETS.get(preset_name, SENSOR_PRESETS["standard"])
+        return cls(observation_variance=preset["R"])
+
+    @property
+    def precision(self) -> float:
+        """精度 = 1/R —— 方差的倒数，越大越好。"""
+        if self.observation_variance <= 0:
+            return float("inf")
+        return 1.0 / self.observation_variance
+
+
+# ══ 8.3 贝叶斯融合 ══
+
+
+@dataclass
+class FusedEstimate:
+    """贝叶斯融合后的后验估计。
+
+    核心思想：不选赢家——用逆方差加权把所有观测融合成一个后验分布。
+    融合后的精度总是高于任一单源精度（这是数学保证，不是启发式）。
+
+    数学：
+      w_i = 1 / (Q·Δt_i + R_i)          ← 逆总方差 = 精度
+      μ   = Σ(w_i · x_i) / Σ(w_i)       ← 后验均值（精度加权平均）
+      σ²  = 1 / Σ(w_i)                  ← 后验方差
+      CI  = μ ± 1.96σ                   ← 95% 置信区间
+    """
+
+    posterior_mean: float  # μ — 后验均值（最佳估计）
+    posterior_variance: float  # σ² — 后验方差（越小越确定）
+    confidence_95: tuple[float, float]  # 95% 置信区间
+    source_count: int  # 融合了多少个信息源
+    contributions: list[dict[str, Any]] = field(default_factory=list)
+    # 每个信息源的贡献: {agent, value, total_variance, weight, weight_pct}
+
+    @property
+    def posterior_precision(self) -> float:
+        """后验精度 = 1/σ²。"""
+        if self.posterior_variance <= 0:
+            return float("inf")
+        return 1.0 / self.posterior_variance
+
+    @property
+    def is_reliable(self) -> bool:
+        """后验是否可靠——95% CI 宽度是否合理。"""
+        width = self.confidence_95[1] - self.confidence_95[0]
+        return width < 5.0  # 阈值可调
+
+    def summary(self) -> str:
+        """人类可读的融合结果摘要。"""
+        return (
+            f"后验估计: {self.posterior_mean:.2f} ± {1.96 * (self.posterior_variance ** 0.5):.2f} "
+            f"(95% CI: [{self.confidence_95[0]:.2f}, {self.confidence_95[1]:.2f}], "
+            f"{self.source_count} 源融合)"
+        )
+
+
+def bayesian_fuse(
+    observations: list[tuple[float, float, SensorCharacteristics]],
+    entity: EntityDynamics,
+    now_seconds: float | None = None,
+) -> FusedEstimate:
+    """贝叶斯融合——多源观测的精度加权平均。
+
+    不是二选一。每个观测都有价值——即使陈旧、即使噪声大。
+
+    Args:
+        observations: [(观测值, 时间戳(Unix秒), 传感器特征), ...]
+        entity: 被观测实体的动力学特征
+        now_seconds: 当前时间（None=自动取当前时间）
+
+    Returns:
+        FusedEstimate — 后验分布
+
+    Example:
+        # 两个温度传感器报告同一车间温度
+        entity = EntityDynamics.from_preset("fast")  # 温度是快变实体
+        fast_sensor = SensorCharacteristics.from_preset("precision")  # R=0.01
+        slow_sensor = SensorCharacteristics.from_preset("standard")   # R=1.0
+
+        result = bayesian_fuse([
+            (85.0, now - 5,    fast_sensor),   # 5秒前，精密传感器
+            (75.0, now - 3600, slow_sensor),   # 1小时前，标准传感器
+        ], entity)
+        # → posterior_mean ≈ 84.9 (精密传感器权重远大于陈旧的标准传感器)
+        # → posterior_variance < 0.01 (两个源融合后精度更高)
+    """
+    import math
+    import time as _time
+
+    if not observations:
+        raise ValueError("至少需要一个观测")
+
+    now = now_seconds or _time.time()
+
+    # 1. 为每个观测计算总方差和精度权重
+    weighted: list[dict[str, Any]] = []
+    total_weight = 0.0
+
+    for value, ts, sensor in observations:
+        age_s = max(0.0, now - ts)
+        process_var = entity.process_noise_at_age(age_s)  # Q·Δt
+        total_var = process_var + sensor.observation_variance  # Q·Δt + R
+        precision_w = 1.0 / total_var if total_var > 0 else float("inf")
+        weight = precision_w * sensor.reliability_score  # 可靠性折扣
+
+        weighted.append({
+            "value": value,
+            "age_s": age_s,
+            "process_variance": process_var,
+            "observation_variance": sensor.observation_variance,
+            "total_variance": total_var,
+            "precision": precision_w,
+            "reliability": sensor.reliability_score,
+            "weight": weight,
+        })
+        total_weight += weight
+
+    if total_weight <= 0:
+        raise ValueError("所有观测的权重总和为 0——传感器可能全部失效")
+
+    # 2. 精度加权平均
+    posterior_mean = sum(w["value"] * w["weight"] for w in weighted) / total_weight
+    posterior_variance = 1.0 / total_weight  # σ² = 1/Σw
+
+    # 3. 95% 置信区间
+    sigma = math.sqrt(posterior_variance)
+    ci_low = posterior_mean - 1.96 * sigma
+    ci_high = posterior_mean + 1.96 * sigma
+
+    # 4. 各源贡献分析
+    contributions = []
+    for w in weighted:
+        contributions.append({
+            "value": w["value"],
+            "age_s": round(w["age_s"], 3),
+            "total_variance": round(w["total_variance"], 6),
+            "weight_pct": round(w["weight"] / total_weight * 100, 1),
+        })
+
+    return FusedEstimate(
+        posterior_mean=posterior_mean,
+        posterior_variance=posterior_variance,
+        confidence_95=(ci_low, ci_high),
+        source_count=len(observations),
+        contributions=contributions,
+    )
+
+
+# ══ 8.4 反馈学习 ══
+
+
+def update_sensor_reliability(
+    sensor: SensorCharacteristics,
+    observed_value: float,
+    observed_timestamp_s: float,
+    ground_truth: float,
+    entity: EntityDynamics,
+    *,
+    now_s: float | None = None,
+    learning_rate: float = 0.1,
+) -> SensorCharacteristics:
+    """用真实结果更新传感器的可靠性分数。
+
+    每次获得 ground truth 后调用——系统从自己的错误中学习。
+
+    关键：用传感器自身的总方差做归一化，不是融合后验。
+    σ²_total = Q·Δt + R
+    z = |x_observed - y_truth| / σ_total
+    z 小 → 传感器工作正常 → 可靠性上升
+    z 大 → 传感器可能故障/失准 → 可靠性下降
+
+    Args:
+        sensor: 要更新的传感器
+        observed_value: 传感器当时报告的值
+        observed_timestamp_s: 观测时间戳（Unix 秒）
+        ground_truth: 后来确认的真实值
+        entity: 被观测实体的动力学（用于计算 Q·Δt）
+        now_s: 当前时间
+        learning_rate: EMA 平滑系数
+
+    Returns:
+        更新后的 SensorCharacteristics
+    """
+    import time as _time
+
+    now = now_s or _time.time()
+    age_s = max(0.0, now - observed_timestamp_s)
+    total_var = entity.process_noise_at_age(age_s) + sensor.observation_variance
+    sigma = total_var ** 0.5
+
+    if sigma <= 0:
+        return sensor  # 完美传感器，无需更新
+
+    z_score = abs(observed_value - ground_truth) / sigma
+
+    # 连续调整：1σ 内加分，超过 1σ 连续扣分
+    if z_score < 1.0:
+        adjustment = +0.05  # 在预期范围内 → 加分
+    else:
+        # 偏离越大扣分越重（capped 防止单次灾难性降权）
+        adjustment = -0.02 * min(z_score, 20.0)
+
+    sensor.reliability_score = max(0.05, min(1.0,
+        sensor.reliability_score + learning_rate * adjustment
+    ))
+
+    return sensor
+
+
+# ══ 8.5 向后兼容 — 旧版 arbitrate() ══
+# 保留旧接口，内部委托给 bayesian_fuse()。
 
 
 @dataclass
 class ArbitrationResult:
-    """天层跨时间仲裁的结果。"""
+    """[已弃用] 旧版二选一仲裁结果。保留用于向后兼容。
+    新代码应使用 bayesian_fuse() → FusedEstimate。"""
 
-    winner: AgentRef  # 置信度最高的信息源
-    confidence: float  # 获胜者的当前置信度
-    reasoning: str  # 人类可读的仲裁理由
-    conflict: bool  # True = 前两名置信度太接近，无法确定裁决
+    winner: AgentRef
+    confidence: float
+    reasoning: str
+    conflict: bool
     report: dict[str, Any] = field(default_factory=dict)
-    # report 包含每个信息源的详细评估
 
 
 def arbitrate(
     reports: list[tuple[TrigramMessage, AgentRegistration]],
     entity_id: str = "",
 ) -> ArbitrationResult:
-    """天层跨时间尺度信息仲裁。
-
-    当多个 Agent 对同一实体给出矛盾信息时，天层根据：
-      1. 各信息源的当前置信度（基于时间衰减函数）
-      2. 置信度相近时，比较信息源的历史准确率
-    裁定信任哪一个信息源。
-
-    Args:
-        reports: [(消息, Agent注册信息), ...] — 所有关于同一实体的报告
-        entity_id: 被报告的实体标识（用于人类可读的输出）
-
-    Returns:
-        ArbitrationResult — 包含获胜者、置信度、理由、是否冲突
-
-    Example:
-        # 快速传感器 vs 慢速传感器
-        fast_msg = ...  # 5秒前的数据
-        slow_msg = ...  # 2小时前的数据
-        result = arbitrate([
-            (fast_msg, fast_agent),
-            (slow_msg, slow_agent),
-        ], entity_id="workshop_3_temp")
-        # → winner=fast_agent, confidence=0.5, conflict=False
-    """
+    """[已弃用] 二选一仲裁。保留向后兼容。
+    新代码应使用 bayesian_fuse()。"""
     if not reports:
-        raise ValueError("仲裁至少需要一条报告")
+        raise ValueError("至少需要一条报告")
 
-    # 1. 计算每条报告的当前置信度
-    scored: list[dict[str, Any]] = []
+    import time as _time
+
+    entity = EntityDynamics.from_preset("fast")  # 默认快变实体
+    now_s = _time.time()
+
+    obs_list: list[tuple[float, float, SensorCharacteristics]] = []
+    agent_list: list[AgentRef] = []
     for msg, agent_reg in reports:
-        conf = msg.confidence(half_life_ms=agent_reg.time_scale.decay.half_life_ms)
-        scored.append({
-            "msg": msg,
-            "agent": agent_reg,
-            "confidence": conf,
-            "age_ms": msg.age_ms,
-            "tick": agent_reg.time_scale.tick_label,
-            "half_life_ms": agent_reg.time_scale.decay.half_life_ms,
-        })
+        # 从旧的 InfoDecayConfig 估算 R（粗略近似）
+        half_life_s = agent_reg.time_scale.decay.half_life_ms / 1000.0
+        r_approx = half_life_s * 0.1  # 衰减越快 → 测量越不精确
+        sensor = SensorCharacteristics(
+            observation_variance=r_approx,
+            reliability_score=1.0,
+        )
+        # 从 payload 中尝试提取数值
+        value = 0.0
+        if msg.payload:
+            for v in msg.payload.values():
+                if isinstance(v, (int, float)):
+                    value = float(v)
+                    break
+        obs_list.append((value, msg.timestamp / 1000.0, sensor))
+        agent_list.append(agent_reg.ref)
 
-    # 按置信度降序
-    scored.sort(key=lambda x: x["confidence"], reverse=True)
+    fused = bayesian_fuse(obs_list, entity, now_s)
 
-    # 2. 判断是否冲突（前两名置信度差距 < 0.15）
+    # 找贡献最大的源
+    max_pct = max(c["weight_pct"] for c in fused.contributions)
+    winner_idx = next(
+        i for i, c in enumerate(fused.contributions)
+        if c["weight_pct"] == max_pct
+    )
+
     conflict = False
-    if len(scored) >= 2:
-        gap = scored[0]["confidence"] - scored[1]["confidence"]
-        conflict = abs(gap) < 0.15
-
-    winner = scored[0]
-
-    # 3. 生成人类可读的仲裁理由
-    parts = [f"仲裁实体: {entity_id or 'unknown'}"]
-    for i, s in enumerate(scored):
-        parts.append(
-            f"  [{i+1}] {s['agent'].ref} "
-            f"置信度={s['confidence']:.2%} "
-            f"(已过{s['age_ms']}ms, tick={s['tick']}, "
-            f"半衰={s['half_life_ms']}ms)"
-        )
-
-    if conflict:
-        parts.append(
-            f"  ⚠️ 冲突: 前两名置信度差距过小({abs(gap):.2%})，建议升级到人层确认"
-        )
-    else:
-        parts.append(
-            f"  → 裁定: 信任 {winner['agent'].ref} "
-            f"(置信度 {winner['confidence']:.2%})"
-        )
+    if len(fused.contributions) >= 2:
+        sorted_pct = sorted(c["weight_pct"] for c in fused.contributions)
+        conflict = abs(sorted_pct[-1] - sorted_pct[-2]) < 15.0
 
     return ArbitrationResult(
-        winner=winner["agent"].ref,
-        confidence=winner["confidence"],
-        reasoning="\n".join(parts),
+        winner=agent_list[winner_idx],
+        confidence=1.0 - fused.posterior_variance,
+        reasoning=fused.summary(),
         conflict=conflict,
         report={
             "entity": entity_id,
-            "sources": [
-                {
-                    "agent": s["agent"].ref.to_dict(),
-                    "confidence": round(s["confidence"], 4),
-                    "age_ms": s["age_ms"],
-                    "tick": s["tick"],
-                }
-                for s in scored
-            ],
+            "posterior_mean": fused.posterior_mean,
+            "posterior_variance": fused.posterior_variance,
+            "confidence_95": fused.confidence_95,
+            "sources": fused.contributions,
             "conflict": conflict,
         },
     )

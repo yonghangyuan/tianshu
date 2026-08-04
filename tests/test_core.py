@@ -163,10 +163,10 @@ class TestTrigramChannel:
 
 
 class TestTimeArbitration:
-    """跨时间尺度仲裁——天层根据衰减函数裁定信任哪个信息源。"""
+    """跨时间尺度仲裁——旧版兼容 + 新版贝叶斯融合。"""
 
-    def test_fast_beats_stale(self):
-        """新数据置信度高 → 胜出。"""
+    def test_legacy_arbitrate_still_works(self):
+        """旧版 arbitrate() 仍可调用。"""
         import time
         from tianshu.sdk.trigram import (
             arbitrate, TrigramMessage, AgentRef, Layer, AgentRegistration,
@@ -188,47 +188,89 @@ class TestTimeArbitration:
         fresh_msg = TrigramMessage(
             decision_id="d1", timestamp=now_ms - 1_000, ttl_ms=60_000,
             source=fast.ref, target=AgentRef(Layer.REN, "planner"), intent="新数据",
+            payload={"temperature": 85.0},
         )
         stale_msg = TrigramMessage(
             decision_id="d2", timestamp=now_ms - 600_000, ttl_ms=600_000,
             source=slow.ref, target=AgentRef(Layer.REN, "planner"), intent="旧数据",
+            payload={"temperature": 75.0},
         )
 
         result = arbitrate([(fresh_msg, fast), (stale_msg, slow)], entity_id="test")
-
         assert not result.conflict
-        # 1秒前 vs 10分钟前 → 快传感器胜出
         assert result.winner == fast.ref
 
-    def test_near_tie_flags_conflict(self):
-        """置信度相近 → 标记为冲突。"""
+    def test_bayesian_fuse_precision_weighted(self):
+        """贝叶斯融合：精密传感器权重远大于标准传感器。"""
         import time
         from tianshu.sdk.trigram import (
-            arbitrate, TrigramMessage, AgentRef, Layer, AgentRegistration,
-            TimeScale, InfoDecayConfig, SyncMode, LayerPermission,
+            bayesian_fuse, EntityDynamics, SensorCharacteristics,
         )
 
-        now_ms = int(time.time() * 1000)
-        a1 = AgentRegistration(
-            ref=AgentRef(Layer.DI, "sensor_a"),
-            time_scale=TimeScale(tick_ms=1000, decay=InfoDecayConfig(half_life_ms=60_000)),
-            permissions=[LayerPermission.EXECUTE],
-        )
-        a2 = AgentRegistration(
-            ref=AgentRef(Layer.DI, "sensor_b"),
-            time_scale=TimeScale(tick_ms=1000, decay=InfoDecayConfig(half_life_ms=60_000)),
-            permissions=[LayerPermission.EXECUTE],
+        now = time.time()
+        entity = EntityDynamics.from_preset("fast")
+        precision = SensorCharacteristics.from_preset("precision")
+        standard = SensorCharacteristics.from_preset("standard")
+
+        result = bayesian_fuse([
+            (85.0, now - 5, precision),
+            (75.0, now - 3600, standard),
+        ], entity)
+
+        # 精密传感器应占绝对主导
+        assert result.source_count == 2
+        assert result.contributions[0]["weight_pct"] > 90  # 精密 > 90%
+        assert result.posterior_variance < 0.1  # 高精度
+
+    def test_bayesian_fuse_single_source(self):
+        """单源融合 → 后验 = 单源。"""
+        import time
+        from tianshu.sdk.trigram import (
+            bayesian_fuse, EntityDynamics, SensorCharacteristics,
         )
 
-        # 两个消息几乎同时到达，相同半衰 → 置信度几乎相同
-        m1 = TrigramMessage(
-            decision_id="d_a", timestamp=now_ms - 2_000, ttl_ms=60_000,
-            source=a1.ref, target=AgentRef(Layer.REN, "planner"), intent="报告A",
-        )
-        m2 = TrigramMessage(
-            decision_id="d_b", timestamp=now_ms - 3_000, ttl_ms=60_000,
-            source=a2.ref, target=AgentRef(Layer.REN, "planner"), intent="报告B",
+        now = time.time()
+        entity = EntityDynamics.from_preset("static")
+        sensor = SensorCharacteristics.from_preset("precision")
+
+        result = bayesian_fuse([(42.0, now, sensor)], entity)
+        assert result.source_count == 1
+        assert abs(result.posterior_mean - 42.0) < 0.001
+
+    def test_feedback_learning_penalizes_outliers(self):
+        """反馈学习：严重偏离 ground truth → 可靠性下降。"""
+        import time
+        from tianshu.sdk.trigram import (
+            update_sensor_reliability, EntityDynamics, SensorCharacteristics,
         )
 
-        result = arbitrate([(m1, a1), (m2, a2)], entity_id="test")
-        assert result.conflict  # 差值仅 1 秒，应在阈值内
+        now = time.time()
+        entity = EntityDynamics.from_preset("fast")
+
+        # 偏离小的传感器 → 可靠性保持高位
+        good = SensorCharacteristics.from_preset("precision")
+        update_sensor_reliability(good, 85.0, now - 5, 84.8, entity)
+        assert good.reliability_score > 0.95
+
+        # 偏离大的传感器 → 可靠性显著下降
+        bad = SensorCharacteristics.from_preset("precision")
+        old_score = bad.reliability_score
+        update_sensor_reliability(bad, 85.0, now - 5, 70.0, entity)
+        assert bad.reliability_score < old_score
+
+    def test_entity_presets_exist(self):
+        """所有预设实体类型可创建。"""
+        from tianshu.sdk.trigram import EntityDynamics
+
+        for etype in ["static", "slow", "fast", "ultra_fast"]:
+            e = EntityDynamics.from_preset(etype)
+            assert e.entity_type == etype
+            assert e.process_noise_per_second >= 0
+
+    def test_sensor_presets_exist(self):
+        """所有预设传感器精度可创建。"""
+        from tianshu.sdk.trigram import SensorCharacteristics
+
+        for pname in ["precision", "standard", "coarse", "human"]:
+            s = SensorCharacteristics.from_preset(pname)
+            assert s.observation_variance > 0

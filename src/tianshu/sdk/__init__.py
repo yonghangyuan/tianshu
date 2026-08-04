@@ -34,7 +34,11 @@ from .trigram import (
     AgentRegistration,
     # Scenarios
     urban_city_brain_agents, industrial_iot_agents,
-    # Arbitration
+    # Bayesian Fusion
+    EntityDynamics, SensorCharacteristics,
+    bayesian_fuse, FusedEstimate,
+    update_sensor_reliability,
+    # Arbitration (legacy)
     arbitrate, ArbitrationResult,
     # Validation
     validate_message,
