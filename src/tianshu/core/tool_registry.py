@@ -8,6 +8,30 @@ from __future__ import annotations
 
 from typing import Any
 
+# 决策引擎——给每个工具带上场景利害
+try:
+    from ..sdk.trigram import DecisionContext
+except ImportError:
+    DecisionContext = None  # type: ignore
+
+
+def _stakes_for_permission(permission: int) -> Any:
+    """根据权限级别自动推断场景利害。
+
+    SAFE (0)  → low_stakes     — 无副作用，查就查了
+    READ (1)  → low_stakes     — 读文件，风险低
+    WRITE (2) → moderate/high  — 写文件、shell，需谨慎
+    DANGER (3)→ critical       — 系统级操作，预防原则
+    """
+    if DecisionContext is None:
+        return None
+    if permission <= 1:
+        return DecisionContext.low_stakes()
+    elif permission == 2:
+        return DecisionContext.moderate_stakes()
+    else:
+        return DecisionContext.critical_stakes()
+
 
 class ToolInfo:
     """单个工具的完整信息。"""
@@ -20,6 +44,7 @@ class ToolInfo:
         permission: int = 0,
         skill_name: str = "",
         category: str = "general",
+        stakes: Any = None,  # DecisionContext | None
     ):
         self.name = name
         self.description = description
@@ -30,6 +55,8 @@ class ToolInfo:
         self.category = category
         self.call_count: int = 0
         self.error_count: int = 0
+        # 场景利害: 未指定时根据权限自动推断
+        self.stakes = stakes if stakes is not None else _stakes_for_permission(permission)
 
     def to_openai_schema(self) -> dict:
         return {
@@ -43,9 +70,15 @@ class ToolInfo:
 
     def __repr__(self) -> str:
         perm_labels = {0: "SAFE", 1: "READ", 2: "WRITE", 3: "DANG"}
+        stakes_label = ""
+        if self.stakes is not None and hasattr(self.stakes, 'reversibility'):
+            if self.stakes.reversibility > 0.8:
+                stakes_label = " ⚠️CRITICAL"
+            elif self.stakes.max_loss > 0.5:
+                stakes_label = " ⚡HIGH"
         return (
-            f"Tool({self.name} [{perm_labels.get(self.permission, '?')}] "
-            f"← {self.skill_name})"
+            f"Tool({self.name} [{perm_labels.get(self.permission, '?')}]"
+            f"{stakes_label} ← {self.skill_name})"
         )
 
 

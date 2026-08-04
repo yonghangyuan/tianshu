@@ -32,6 +32,7 @@ from ..sdk.trigram import (
     Layer, AgentRef, TrigramMessage, MessageConstraints,
     MessagePriority, MessageDirection,
     AuditSixQuestions, validate_message,
+    DecisionContext, DecisionCriterion, decide, FusedEstimate,
 )
 from .router import ModelRouter, RoutingConfig
 from .status import route as _s_route, tool as _s_tool, done as _s_done, error as _s_error
@@ -1091,6 +1092,65 @@ class AgentCore:
                     "audit": audit.to_dict(),
                 }
 
+        # ── 第三道闸门 (续): 决策引擎风险评估 ──
+        # 策略引擎放行后，决策引擎根据场景利害做二次判断。
+        # 同一个工具，低风险场景直接执行，关键安全场景可能因预防原则被否决。
+        tool_info = self._tool_registry.get(tool_name) if self._tool_registry else None
+        stakes = tool_info.stakes if tool_info else None
+
+        if stakes is not None and (
+            stakes.reversibility > 0.6 or stakes.max_loss > 0.5
+        ):
+            # 需要风险评估——构建简化后验
+            risk_perm = float(tool_info.permission) if tool_info else float(perm)
+            risk_posterior = FusedEstimate(
+                posterior_mean=risk_perm,  # 权限级别作为风险指标
+                posterior_variance=1.0 - min(stakes.model_confidence, 0.99),
+                confidence_95=(float(perm) - 1.0, float(perm) + 1.0),
+                source_count=1,
+            )
+
+            def execute_loss(theta: float) -> float:
+                return stakes.max_loss * (theta / 3.0)  # 权限越高损失期望越大
+
+            def skip_loss(theta: float) -> float:
+                return 0.1  # 跳过的固定机会成本
+
+            risk_decision = decide(
+                risk_posterior,
+                [("execute", execute_loss), ("skip", skip_loss)],
+                stakes,
+            )
+
+            if risk_decision.chosen_action in ("skip", "no_action"):
+                override = TrigramMessage.create(
+                    source=tian_ref, target=ren_ref,
+                    intent=(
+                        f"风险评估否决: {risk_decision.rationale}"
+                    ),
+                    priority=MessagePriority.OVERRIDE,
+                )
+                chain.append(override)
+                audit = AuditSixQuestions.record(
+                    agent=tian_ref,
+                    info=[f"tool={tool_name}",
+                          f"stakes=reversibility={stakes.reversibility},max_loss={stakes.max_loss}"],
+                    alternatives=["execute", "skip"],
+                    rules=[risk_decision.criterion.value],
+                    decision=f"risk_deny: {risk_decision.rationale}",
+                )
+                return {
+                    "allowed": False,
+                    "result": f"天层风险评估否决 [{risk_decision.criterion.value}]: {risk_decision.rationale}",
+                    "message_chain": [m.to_dict() for m in chain],
+                    "audit": audit.to_dict(),
+                }
+
+            # 通过 → 记录风险评估结果到审计
+            risk_passed = True
+        else:
+            risk_passed = False  # 低风险，无需评估
+
         # ── 执行 ──
         try:
             result = await self._execute_tool(tool_name, args)
@@ -1109,14 +1169,17 @@ class AgentCore:
         chain.append(msg_result)
 
         # ── 审计六问 ──
+        rules_used = (
+            [r.get("name", "") for r in self._policy_engine.list_rules()]
+            if self._policy_engine else []
+        )
+        if risk_passed:
+            rules_used.append("risk_assessment:passed")
         audit = AuditSixQuestions.record(
             agent=di_ref,
             info=[f"tool={tool_name}", f"args={_brief_args(args)}"],
             alternatives=["execute", "skip"],
-            rules=(
-                [r.get("name", "") for r in self._policy_engine.list_rules()]
-                if self._policy_engine else []
-            ),
+            rules=rules_used,
             decision=f"{'execute' if success else 'fail'}: {tool_name}",
             outcome=str(result)[:200],
         )
