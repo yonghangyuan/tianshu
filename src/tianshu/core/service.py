@@ -186,14 +186,14 @@ class AgentCore:
         if _wpath.exists():
             import json as _json
             self._permission_whitelist = set(_json.loads(_wpath.read_text(encoding="utf-8")))
-        # 自动注入项目上下文 (类似 Claude Code 的 CLAUDE.md)
+        # 自动注入项目上下文 (类似 Claude Code 的 TIANSHU.md)
         _cwd = Path.cwd()
         _project_slug = str(_cwd).replace(":\\", "--").replace("\\", "-").replace("/", "-")
         _project_dir = Path.home() / ".tianshu" / "projects" / _project_slug
         _project_dir.mkdir(parents=True, exist_ok=True)
 
         _project_context = ""
-        for _cand in ["CLAUDE.md", "README.md", "CONTRIBUTING.md"]:
+        for _cand in ["TIANSHU.md", "README.md", "CONTRIBUTING.md"]:
             _cf = _cwd / _cand
             if _cf.exists():
                 _project_context += f"\n\n## 项目上下文 ({_cand})\n{_cf.read_text(encoding='utf-8', errors='replace')[:3000]}\n"
