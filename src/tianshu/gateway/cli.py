@@ -303,8 +303,6 @@ def render_splash_rich(
 
     table.add_row("能力", f"{tool_count} 工具 · {skill_count} Skills · {model_count} 模型 · {plugin_count} 插件")
     table.add_row("架构", "[red]☰ 天爻[/red]·规律  [yellow]☷ 人爻[/yellow]·目的  [cyan]☷ 地爻[/cyan]·物质")
-    table.add_row("命令", "[bold]/help[/bold] 帮助  [bold]/models[/bold] 模型  [bold]/audit[/bold] 审计  [bold]/setup[/bold] 配置")
-    table.add_row("快捷键", "/mode 切换模式  Ctrl+C 中断  Ctrl+D 退出  ↑↓ 历史")
 
     console.print(table)
     console.print("─" * min(width, 78), style="dim")
