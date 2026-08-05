@@ -17,7 +17,7 @@ from .browser import _extract_text, _entity_decode
 
 class WebSearchSkill(BaseSkill):
     name = "web-search"
-    description = "自建搜索引擎——直接请求 Bing/百度 HTML 结果页，解析返回。零外部 API。"
+    description = "自建搜索引擎——直接请求 Bing/百度 HTML 结果页，解析返回。搜微信文章请用 sogou_weixin，不要用此工具。"
     trigram = "地"
     trigger_keywords = ["搜索", "search", "查一下", "帮我搜"]
 

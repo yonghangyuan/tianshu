@@ -123,6 +123,7 @@ class AgentCore:
         self._confirm_allowed = False
         self._confirm_pending: Any = None
         self._tool_registry: Any = None  # ToolRegistry
+        self._permission_whitelist: set = set()  # "始终允许"的白名单
         self._mode: str = "normal"       # normal / plan / auto
         self._policy_engine: Any = None  # PolicyEngine
 
@@ -180,6 +181,11 @@ class AgentCore:
         # 加载 Plugins + Cron
         self._plugins.load_all()
         self._cron.load()
+        # 加载白名单
+        _wpath = Path(db_path).parent / "tool_whitelist.json"
+        if _wpath.exists():
+            import json as _json
+            self._permission_whitelist = set(_json.loads(_wpath.read_text(encoding="utf-8")))
         self._context_engine.system_prompt = system_prompt
         self._orchestrator.setup(self)
 

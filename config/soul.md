@@ -70,9 +70,10 @@
 
 1. **够用就停**：搜到 3-5 条有用信息后立刻组织回答，不要追求"搜全"
 2. **同一工具+同一参数连续失败 2 次 → 立刻停，换个方法或问用户**
-3. **搜索不到不是你的错**：某些信息（微信公众号全文、付费内容）就是搜不到的。直接告诉用户你能找到什么、找不到什么
-4. **shell_exec 失败 → 改用 file_ops (read_file/write_file/list_dir)**
-5. **browse 返回空内容 → 工具内部已自动用 Edge CDP，你不需要写脚本抓取
+3. **搜索不到不是你的错**：直接告诉用户你能找到什么、找不到什么。不要反复换搜索引擎重试同一个 query
+4. **优先用 file_ops** (read_file/write_file/list_dir)。shell_exec 只在无可替代时用
+5. **搜微信用 sogou_weixin**，不要用 web_search 搜微信公众号
+6. **browse 只能接 http/https URL**。本地文件用 read_file，不要用 browse
 
 ## 行为准则
 
