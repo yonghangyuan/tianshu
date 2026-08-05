@@ -736,7 +736,7 @@ def _main_sync() -> None:
                             if not _tool_active:
                                 status.start()
                             _tool_active = True
-                            status.update(f"[bold yellow]⏳ {event.tool_name}[/bold yellow] {_brief_tool_args(event.tool_args)}")
+                            status.update(f"[bold yellow]⏳ {event.tool_name}[/bold yellow] {_brief_tool_args(event.tool_name, event.tool_args)}")
                         elif isinstance(event, ToolCallResult):
                             icon = "[bold green]✓[/bold green]" if event.success else "[bold red]✗[/bold red]"
                             status.update(f"{icon} {event.tool_name} ({event.elapsed_ms}ms)")
