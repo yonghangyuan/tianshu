@@ -752,6 +752,20 @@ def _main_sync() -> None:
                             if _first_content:
                                 status.stop()
                                 _first_content = False
+                                # 先展示思考摘要 + 空行, 再渲染内容
+                                if renderer._reasoning_buf and not renderer._show_reasoning:
+                                    from rich.panel import Panel as _Pnl2
+                                    from rich.text import Text as _Txt2
+                                    full = "".join(renderer._reasoning_buf)
+                                    first_line = full.split("\n")[0][:120] if full else ""
+                                    if len(full) - len(first_line) > 10:
+                                        _rich_console.print(_Pnl2(
+                                            _Txt2(f"{first_line}...", style="dim italic"),
+                                            title=f"[dim]Thinking ({len(full)} chars)[/dim]",
+                                            subtitle="[dim]/think 展开[/dim]",
+                                            border_style="dim", padding=(0, 1),
+                                        ))
+                                        _rich_console.print()
                             renderer.handle(event)
                         else:
                             renderer.handle(event)
@@ -787,22 +801,6 @@ def _main_sync() -> None:
                 border_style="red",
                 padding=(1, 2),
             ))
-
-        # 折叠思考摘要（如果思考被隐藏）
-        if renderer._reasoning_buf and not renderer._show_reasoning:
-            from rich.panel import Panel as _Pnl
-            from rich.text import Text as _Txt
-            full = "".join(renderer._reasoning_buf)
-            first_line = full.split("\n")[0][:120] if full else ""
-            remaining = len(full) - len(first_line)
-            if remaining > 10:
-                _rich_console.print(_Pnl(
-                    _Txt(f"{first_line}...", style="dim italic"),
-                    title=f"[dim]Thinking ({len(full)} chars)[/dim]",
-                    subtitle="[dim]/think 展开[/dim]",
-                    border_style="dim",
-                    padding=(0, 1),
-                ))
 
         _rich_console.print()
         session_store.save(ctx, title=user_input[:50])
