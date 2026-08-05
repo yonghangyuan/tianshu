@@ -67,6 +67,7 @@ class StreamRenderer:
         self._show_reasoning = False  # 默认折叠，/think 切换
         self._t0 = time.time()
         self._flushed_len = 0  # 已 flush 的字符数
+        self._last_cost: dict = {}  # /cost 查询用
 
     def reset(self) -> None:
         self._content_buf.clear()
@@ -142,6 +143,12 @@ class StreamRenderer:
             return True
 
         elif isinstance(event, StreamDone):
+            self._last_cost = {
+                "prompt": event.prompt_tokens,
+                "completion": event.completion_tokens,
+                "elapsed": event.elapsed_ms / 1000.0,
+                "model": event.model_used,
+            }
             # 渲染剩余内容（段落边界之后的部分）
             full = "".join(self._content_buf)
             remaining = full[self._flushed_len:].strip()
@@ -157,7 +164,6 @@ class StreamRenderer:
                     console.print(Markdown(full.strip(), code_theme="one-dark"))
                 except Exception:
                     console.print(full.strip())
-            # 统计行由 _s_done() 输出到 stderr
             return True
 
         elif isinstance(event, StreamError):

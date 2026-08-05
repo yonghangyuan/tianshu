@@ -61,6 +61,7 @@ def _print_cmd_help() -> None:
         ("/memory", "记忆管理"),
         ("/tools", "查看工具"),
         ("/mode, Tab", "切换 normal/auto/plan"),
+        ("/cost", "Token 消耗"),
         ("/clear", "清屏"),
         ("exit, q", "退出"),
     ]
@@ -490,6 +491,9 @@ def _main_sync() -> None:
         elif user_input in ("skills", "/skills"):
             _show_skills(core.skills.loader, core.skills.observer)
             continue
+        elif user_input in ("cost", "/cost"):
+            _show_cost(renderer)
+            continue
         elif user_input in ("help", "/help", "h", "/h"):
             if user_input.endswith(" all") or user_input == "/help all":
                 _print_full_help()
@@ -822,10 +826,29 @@ def _main_sync() -> None:
                 padding=(1, 2),
             ))
 
+        # 工具调用永久记录
+        if renderer._tool_count > 0:
+            from rich.table import Table as _Tbl
+            tt = _Tbl(box=None, padding=(0, 2), show_header=False)
+            tt.add_column(style="dim", width=4)
+            tt.add_column(style="cyan")
+            tt.add_column(style="dim", width=15)
+            tt.add_row("", "Tools", f"{renderer._tool_count} calls")
+            _rich_console.print(tt)
+
         _rich_console.print()
         session_store.save(ctx, title=user_input[:50])
 
     _rich_console.print("[dim]天枢已关闭[/dim]")
+
+
+def _show_cost(renderer) -> None:
+    """显示最近一次对话的 token 消耗。"""
+    cost_info = getattr(renderer, '_last_cost', None)
+    if not cost_info:
+        _rich_console.print("[dim]暂无消耗数据[/dim]")
+        return
+    _rich_console.print(f"  ↓{cost_info.get('prompt', 0)//1000}K ↑{cost_info.get('completion', 0)//1000}K  {cost_info.get('elapsed', 0):.1f}s  [dim]{cost_info.get('model', '')}[/dim]\n")
 
 
 def _show_tools(core) -> None:
