@@ -64,7 +64,7 @@ class StreamRenderer:
         self._content_buf: list[str] = []
         self._reasoning_buf: list[str] = []
         self._tool_count = 0
-        self._show_reasoning = False
+        self._show_reasoning = False  # 默认折叠，/think 切换
         self._t0 = time.time()
         self._flushed_len = 0  # 已 flush 的字符数
 
@@ -95,6 +95,8 @@ class StreamRenderer:
 
         elif isinstance(event, ReasoningDelta):
             self._reasoning_buf.append(event.text)
+            if self._show_reasoning:
+                console.print(Text(event.text, style="dim italic"), end="")
             return True
 
         elif isinstance(event, ToolCallStart):
@@ -160,7 +162,12 @@ class StreamRenderer:
 
         elif isinstance(event, StreamError):
             console.print()
-            console.print(Text(f"  ERROR: {event.message}", style="bold red"))
+            console.print(Panel(
+                Text(event.message, style="bold"),
+                title="[bold red]✗ Error[/bold red]",
+                border_style="red",
+                padding=(1, 2),
+            ))
             return False
 
         return True
@@ -206,8 +213,24 @@ def _format_tool_args(name: str, args: dict) -> str:
         return str(args)[:80]
 
 
-def _print_done(event: StreamDone, tool_count: int, t0: float) -> None:
-    """打印完成统计行。—— Rich Text 版本，不泄露 raw markup。"""
+def _print_done(event: StreamDone, tool_count: int, t0: float,
+                reasoning_buf: list[str] | None = None,
+                show_reasoning: bool = False) -> None:
+    """打印完成统计行 + 折叠的思考过程。"""
+    # 思考折叠提示
+    if reasoning_buf and not show_reasoning:
+        full = "".join(reasoning_buf)
+        first_line = full.split("\n")[0][:120] if full else ""
+        remaining = len(full) - len(first_line)
+        if remaining > 10:
+            console.print(Panel(
+                Text(f"{first_line}...", style="dim italic"),
+                title=f"[dim]Thinking ({len(full)} chars)[/dim]",
+                subtitle="[dim]/think 展开[/dim]",
+                border_style="dim",
+                padding=(0, 1),
+            ))
+
     elapsed = time.time() - t0
     parts = [
         f"⎿  {event.decision_id[-8:]}",

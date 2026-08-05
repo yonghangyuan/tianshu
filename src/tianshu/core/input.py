@@ -34,9 +34,10 @@ def create_input_handler(
 
     try:
         from prompt_toolkit import PromptSession
-        from prompt_toolkit.history import InMemoryHistory
+        from prompt_toolkit.history import FileHistory
         from prompt_toolkit.completion import WordCompleter
         from prompt_toolkit.key_binding import KeyBindings
+        from pathlib import Path as _P
 
         # 构建补全词列表
         completions: list[str] = []
@@ -45,8 +46,54 @@ def create_input_handler(
         if model_names:
             completions.extend(model_names)
 
-        completer = WordCompleter(completions, ignore_case=True, sentence=True) if completions else None
-        pt_history = InMemoryHistory()
+        # 自定义补全器: 默认用命令+模型补全, @ 触发文件路径补全
+        class _SmartCompleter:
+            def __init__(self, word_completer, cwd):
+                self._word = word_completer
+                self._cwd = cwd
+
+            def get_completions(self, document, complete_event):
+                text = document.text_before_cursor
+                # 检查是否在 @ 上下文中
+                last_at = text.rfind("@")
+                if last_at >= 0:
+                    after_at = text[last_at:]
+                    if " " not in after_at and "\n" not in after_at:
+                        # 在 @ 上下文中 → 文件路径补全
+                        prefix = after_at[1:]  # @ 后面的部分
+                        import os as _os
+                        search_dir = self._cwd
+                        # 如果 prefix 包含路径分隔符，调整搜索目录
+                        if "/" in prefix or "\\" in prefix:
+                            parent = _os.path.dirname(prefix)
+                            if parent and _os.path.isdir(_os.path.join(str(self._cwd), parent)):
+                                search_dir = _os.path.join(str(self._cwd), parent)
+                                prefix = _os.path.basename(prefix)
+                        try:
+                            for entry in sorted(_os.listdir(search_dir)):
+                                if entry.startswith(prefix) and not entry.startswith("."):
+                                    full = _os.path.join(search_dir, entry)
+                                    display = f"@{entry}{'/' if _os.path.isdir(full) else ''}"
+                                    from prompt_toolkit.completion import Completion
+                                    yield Completion(
+                                        entry + ("/" if _os.path.isdir(full) else ""),
+                                        start_position=-len(prefix),
+                                        display=display,
+                                    )
+                        except OSError:
+                            pass
+                        return
+                # 默认补全
+                if self._word:
+                    yield from self._word.get_completions(document, complete_event)
+
+        word_comp = WordCompleter(completions, ignore_case=True, sentence=True) if completions else None
+        completer = _SmartCompleter(word_comp, _P.cwd())
+
+        # 持久化历史文件
+        _hist_path = _P.home() / ".tianshu" / "cli_history.txt"
+        _hist_path.parent.mkdir(parents=True, exist_ok=True)
+        pt_history = FileHistory(str(_hist_path))
         if history:
             for h in history:
                 pt_history.append_string(h)
@@ -129,6 +176,11 @@ class PromptToolkitHandler(InputHandler):
         @kb.add("escape", "enter")
         def _(event):
             event.current_buffer.insert_text("\n")
+
+        # ── Ctrl+R: 历史搜索 ──
+        @kb.add("c-r")
+        def _(event):
+            event.app.layout.focus(event.app.layout.current_control.search_buffer_control)
 
         # ── Enter: 提交（末尾 \\ 续行）──
         @kb.add("enter")

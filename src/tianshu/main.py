@@ -692,23 +692,43 @@ def _main_sync() -> None:
         resolved_input = _resolve_at_refs(user_input)
 
         # ── 对话（每次独立 asyncio.run）──
-        from tianshu.sdk.models import AgentRequest, ToolCallConfirm
-        from tianshu.gateway.cli import _handle_confirm
+        from tianshu.sdk.models import AgentRequest, ToolCallConfirm, ToolCallStart, ToolCallResult, StreamError
+        from tianshu.gateway.cli import _handle_confirm, _format_tool_args as _brief_tool_args
 
         if resolved_input != user_input:
             _rich_console.print("  [dim]已读取 @ 引用的文件[/dim]")
         _rich_console.print()
         renderer.reset()
 
+        from rich.panel import Panel as _Panel
+        from rich.status import Status as _Status
+
         async def _run_turn():
-            async for event in core.run_stream(
-                AgentRequest(input=resolved_input, task_type="conversation"),
-                ctx=ctx,
-            ):
-                if isinstance(event, ToolCallConfirm):
-                    _handle_confirm(event, core)
-                else:
-                    renderer.handle(event)
+            with _rich_console.status("[bold #60a5fa]Thinking...", spinner="dots") as status:
+                async for event in core.run_stream(
+                    AgentRequest(input=resolved_input, task_type="conversation"),
+                    ctx=ctx,
+                ):
+                    if isinstance(event, ToolCallConfirm):
+                        status.stop()
+                        _handle_confirm(event, core)
+                        status.start()
+                    elif isinstance(event, ToolCallStart):
+                        status.update(f"[bold yellow]⏳ {event.tool_name}[/bold yellow] {_brief_tool_args(event.tool_args)}")
+                    elif isinstance(event, ToolCallResult):
+                        icon = "[bold green]✓[/bold green]" if event.success else "[bold red]✗[/bold red]"
+                        status.update(f"{icon} {event.tool_name} ({event.elapsed_ms}ms)")
+                    elif isinstance(event, StreamError):
+                        status.stop()
+                        _rich_console.print(_Panel(
+                            f"[bold]{event.message}[/bold]",
+                            title="[bold red]✗ Error[/bold red]",
+                            border_style="red",
+                            padding=(1, 2),
+                        ))
+                    else:
+                        status.stop()
+                        renderer.handle(event)
 
         try:
             asyncio.run(_run_turn())
@@ -716,22 +736,44 @@ def _main_sync() -> None:
             _rich_console.print("\n  [dim]已取消[/dim]")
         except Exception as e:
             msg = str(e)
-            # 分类提示
+            title = "✗ Error"
             if "connect" in msg.lower() or "timeout" in msg.lower() or "refused" in msg.lower():
-                _rich_console.print(f"[bold red]🌐 网络不通[/bold red] — 请检查网络或代理设置")
-                _rich_console.print(f"[dim]→ 试试: ping api.deepseek.com[/dim]")
+                title = "🌐 网络不通"
+                hint = "ping api.deepseek.com"
             elif "401" in msg or "403" in msg:
-                _rich_console.print(f"[bold red]🔑 鉴权失败[/bold red] — API Key 无效或过期")
-                _rich_console.print(f"[dim]→ 试试: /setup 重新配置[/dim]")
+                title = "🔑 鉴权失败"
+                hint = "/setup 重新配置 API Key"
             elif "429" in msg or "rate" in msg.lower():
-                _rich_console.print(f"[bold red]⏳ 请求太频繁[/bold red] — 稍等几秒再试")
-                _rich_console.print(f"[dim]→ 等待 5-10 秒后重试[/dim]")
+                title = "⏳ 请求太频繁"
+                hint = "等待 5-10 秒后重试"
             elif "not set up" in msg.lower():
-                _rich_console.print(f"[bold red]⚙️ 未初始化[/bold red] — 请检查 config/providers.yaml")
-                _rich_console.print(f"[dim]→ 试试: /setup 启动配置向导[/dim]")
+                title = "⚙️ 未初始化"
+                hint = "/setup 启动配置向导"
             else:
-                _rich_console.print(f"[bold red]错误:[/bold red] {msg[:300]}")
-                _rich_console.print(f"[dim]→ 输入 /help 查看可用命令[/dim]")
+                title = "✗ 错误"
+                hint = "/help 查看可用命令"
+            _rich_console.print(_Panel(
+                f"[bold]{msg[:300]}[/bold]\n\n[dim]→ 试试: {hint}[/dim]",
+                title=f"[bold red]{title}[/bold red]",
+                border_style="red",
+                padding=(1, 2),
+            ))
+
+        # 折叠思考摘要（如果思考被隐藏）
+        if renderer._reasoning_buf and not renderer._show_reasoning:
+            from rich.panel import Panel as _Pnl
+            from rich.text import Text as _Txt
+            full = "".join(renderer._reasoning_buf)
+            first_line = full.split("\n")[0][:120] if full else ""
+            remaining = len(full) - len(first_line)
+            if remaining > 10:
+                _rich_console.print(_Pnl(
+                    _Txt(f"{first_line}...", style="dim italic"),
+                    title=f"[dim]Thinking ({len(full)} chars)[/dim]",
+                    subtitle="[dim]/think 展开[/dim]",
+                    border_style="dim",
+                    padding=(0, 1),
+                ))
 
         _rich_console.print()
         session_store.save(ctx, title=user_input[:50])
