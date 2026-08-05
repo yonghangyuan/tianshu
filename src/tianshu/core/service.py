@@ -186,7 +186,17 @@ class AgentCore:
         if _wpath.exists():
             import json as _json
             self._permission_whitelist = set(_json.loads(_wpath.read_text(encoding="utf-8")))
-        self._context_engine.system_prompt = system_prompt
+        # 自动注入项目上下文 (类似 Claude Code 的 CLAUDE.md)
+        _project_context = ""
+        _cwd = Path.cwd()
+        for _cand in ["CLAUDE.md", "README.md", "CONTRIBUTING.md"]:
+            _cf = _cwd / _cand
+            if _cf.exists():
+                _project_context += f"\n\n## 项目上下文 ({_cand})\n{_cf.read_text(encoding='utf-8', errors='replace')[:3000]}\n"
+                break  # 只读第一个存在的
+        full_prompt = (_project_context + "\n\n" + system_prompt) if _project_context else system_prompt
+
+        self._context_engine.system_prompt = full_prompt
         self._orchestrator.setup(self)
 
         self._ready = True
