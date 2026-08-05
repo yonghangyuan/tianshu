@@ -707,7 +707,8 @@ def _main_sync() -> None:
         from rich.status import Status as _Status
 
         async def _run_turn():
-            _t0 = time.time()
+            import time as _time
+            _t0 = _time.time()
             with _rich_console.status(f"[bold #60a5fa]Thinking... (0.0s)", spinner="dots") as status:
                 _tool_active = False
                 _first_content = True
@@ -716,7 +717,7 @@ def _main_sync() -> None:
                 async def _update_timer():
                     while True:
                         await asyncio.sleep(0.1)
-                        elapsed = time.time() - _t0
+                        elapsed = _time.time() - _t0
                         current = status._live._renderable if hasattr(status, '_live') else None
                         status.update(f"[bold #60a5fa]Thinking... ({elapsed:.1f}s)")
 
