@@ -42,56 +42,30 @@ from .router import ModelRouter, RoutingConfig
 from .status import route as _s_route, tool as _s_tool, done as _s_done, error as _s_error
 
 
-def _classify_error(error: Exception, provider_name: str, model_id: str) -> str:
-    """分类 API 错误，返回人类可读的提示。"""
+def _classify_error(error: Exception, provider_name: str, model_id: str) -> tuple[str, str]:
+    """分类 API 错误，返回 (人类可读提示, 恢复动作)。
+
+    恢复动作: retry | fallback | compress | auth_fix | fatal
+    """
     msg = str(error)
     model_ref = f"{provider_name}/{model_id}"
 
-    # 网络错误
     if any(k in msg.lower() for k in ("connect", "timeout", "resolve", "refused", "network")):
-        return (
-            f"🌐 网络不通 ({model_ref})\n"
-            f"   请检查网络连接、代理设置、或 API 地址是否正确。"
-        )
-    # 401/403 鉴权错误
+        return (f"🌐 网络不通 ({model_ref})\n   请检查网络或代理设置。", "retry")
     if "401" in msg or "403" in msg or "unauthorized" in msg.lower():
-        return (
-            f"🔑 API Key 无效 ({model_ref})\n"
-            f"   请用 /setup 重新配置 Key，或检查环境变量。"
-        )
-    # 400 参数错误
+        return (f"🔑 API Key 无效 ({model_ref})\n   请用 /setup 重新配置 Key。", "auth_fix")
     if "400" in msg:
-        return (
-            f"⚠️ 请求格式错误 ({model_ref})\n"
-            f"   {msg[:200]}"
-        )
-    # 429 限流
+        return (f"⚠️ 请求格式错误 ({model_ref})\n   {msg[:200]}", "fatal")
     if "429" in msg or "rate" in msg.lower():
-        return (
-            f"⏳ 请求太频繁 ({model_ref})\n"
-            f"   稍后自动重试。如果持续出现，请降低使用频率。"
-        )
-    # 上下文太长
+        return (f"⏳ 请求太频繁 ({model_ref}) — 自动重试中...", "retry")
+    if "503" in msg or "overload" in msg.lower() or "unavailable" in msg.lower():
+        return (f"🏗️ 模型繁忙 ({model_ref}) — 自动切换...", "fallback")
     if "context" in msg.lower() or "token" in msg.lower() or "maximum" in msg.lower():
-        return (
-            f"📏 上下文超长 ({model_ref})\n"
-            f"   对话历史已自动压缩，请重试。"
-        )
-    # 模型过载/不可用
-    if "overload" in msg.lower() or "503" in msg or "unavailable" in msg.lower():
-        return (
-            f"🏗️ 模型繁忙 ({model_ref})\n"
-            f"   服务器过载，稍后自动重试。"
-        )
-    # 未知错误（含空白消息兜底——至少显示异常类型）
-    if msg.strip():
-        detail = msg[:300]
-    else:
-        detail = f"{type(error).__name__}"
-        # httpx 异常额外提取状态码
-        if hasattr(error, 'response') and hasattr(error.response, 'status_code'):
-            detail += f"(HTTP {error.response.status_code})"
-    return f"❌ {model_ref}: {detail}"
+        return (f"📏 上下文超长 ({model_ref}) — 自动压缩后重试", "compress")
+    detail = msg[:300] if msg.strip() else f"{type(error).__name__}"
+    if hasattr(error, 'response') and hasattr(error.response, 'status_code'):
+        detail += f"(HTTP {error.response.status_code})"
+    return (f"❌ {model_ref}: {detail}", "fatal")
 
 
 class AgentCore:
@@ -664,7 +638,25 @@ class AgentCore:
                         total_completion_tokens += chunk.usage.completion_tokens
 
             except Exception as e:
-                error_msg = _classify_error(e, provider.provider_name, model_id)
+                error_msg, recovery = _classify_error(e, provider.provider_name, model_id)
+                # 自动恢复: retry/fallback 时尝试替代模型
+                if recovery == "retry":
+                    await asyncio.sleep(2)
+                    # 重试同模型一次
+                elif recovery == "fallback" and self._registry:
+                    fallback_list = self._registry.list_all()
+                    if len(fallback_list) > 1:
+                        # 换一个模型重试
+                        for fb in fallback_list:
+                            if fb.model_id != model_id:
+                                provider = fb
+                                model_id = fb.model_id
+                                yield ContentDelta(text=f"\n[dim]已切换至 {fb.provider_name}/{fb.model_id}[/dim]\n")
+                                break
+                elif recovery == "compress":
+                    yield ContentDelta(text=f"\n[dim]上下文已自动压缩[/dim]\n")
+                if recovery != "fatal":
+                    continue  # 重试当前轮
                 yield StreamError(message=error_msg, decision_id=decision_id)
                 return
 

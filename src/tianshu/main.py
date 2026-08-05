@@ -491,6 +491,9 @@ def _main_sync() -> None:
         elif user_input in ("skills", "/skills"):
             _show_skills(core.skills.loader, core.skills.observer)
             continue
+        elif user_input.startswith("/loop "):
+            _handle_loop(user_input, core)
+            continue
         elif user_input in ("project", "/project"):
             _show_project(core)
             continue
@@ -861,6 +864,25 @@ def _main_sync() -> None:
     _rich_console.print("[dim]天枢已关闭[/dim]")
 
 
+def _handle_loop(user_input: str, core) -> None:
+    """解析 /loop 5m 搜索论文 格式。"""
+    import re as _re
+    parts = user_input.split(maxsplit=1)[1] if " " in user_input else ""
+    m = _re.match(r"(\d+)([smhd])\s+(.+)", parts)
+    if not m:
+        _rich_console.print("[dim]用法: /loop 5m 搜索今日论文[/dim]")
+        _rich_console.print("[dim]时间单位: s(秒) m(分) h(时) d(天)[/dim]")
+        return
+    num, unit, task = int(m.group(1)), m.group(2), m.group(3)
+    multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    interval_s = num * multipliers.get(unit, 60)
+    cron_expr = f"*/{max(1, interval_s // 60)} * * * *" if interval_s >= 60 else f"* * * * *"
+    core.cron.add(f"loop_{hash(task) % 10000}", cron_expr, "conversation", task)
+    core.cron.save()
+    _rich_console.print(f"  ✅ /loop {num}{unit} → [cyan]{task}[/cyan]")
+    _rich_console.print(f"     cron: {cron_expr}  (每 {interval_s}s)\n")
+
+
 def _show_project(core) -> None:
     """显示当前项目信息。"""
     slug = getattr(core, '_project_slug', '')
@@ -960,7 +982,6 @@ def _resolve_at_refs(user_input: str) -> str:
     added_contexts: list[str] = []
 
     for ref in matches:
-        # 解析路径和行号
         line_spec = ""
         if ":" in ref:
             path_str, line_spec = ref.rsplit(":", 1)
@@ -972,16 +993,25 @@ def _resolve_at_refs(user_input: str) -> str:
             p = Path.cwd() / p
 
         try:
-            if not p.exists():
+            if not p.exists() and not ref.startswith("http"):
                 continue
 
-            if p.is_dir():
-                # 目录：列出内容
+            if ref.startswith("http://") or ref.startswith("https://"):
+                # @url → 抓取网页内容
+                import httpx as _hx
+                try:
+                    resp = _hx.get(ref, timeout=10, follow_redirects=True)
+                    content = resp.text[:3000]
+                    added_contexts.append(f"🌐 {ref}\n{'─'*50}\n{content}")
+                except Exception:
+                    pass
+            elif p.is_dir():
                 entries = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))[:30]
                 content = f"📂 {p}\n" + "\n".join(
                     f"  {'📁' if e.is_dir() else '📄'} {e.name}"
                     for e in entries
                 )
+                added_contexts.append(content)
             else:
                 # 文件：读取内容
                 text = p.read_text(encoding="utf-8", errors="replace")
