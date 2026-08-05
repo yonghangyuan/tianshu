@@ -705,6 +705,8 @@ def _main_sync() -> None:
 
         async def _run_turn():
             with _rich_console.status("[bold #60a5fa]Thinking...", spinner="dots") as status:
+                _tool_active = False
+                _first_content = True
                 async for event in core.run_stream(
                     AgentRequest(input=resolved_input, task_type="conversation"),
                     ctx=ctx,
@@ -714,6 +716,9 @@ def _main_sync() -> None:
                         _handle_confirm(event, core)
                         status.start()
                     elif isinstance(event, ToolCallStart):
+                        if not _tool_active:
+                            status.start()
+                        _tool_active = True
                         status.update(f"[bold yellow]⏳ {event.tool_name}[/bold yellow] {_brief_tool_args(event.tool_args)}")
                     elif isinstance(event, ToolCallResult):
                         icon = "[bold green]✓[/bold green]" if event.success else "[bold red]✗[/bold red]"
@@ -726,8 +731,12 @@ def _main_sync() -> None:
                             border_style="red",
                             padding=(1, 2),
                         ))
+                    elif isinstance(event, ContentDelta):
+                        if _first_content:
+                            status.stop()
+                            _first_content = False
+                        renderer.handle(event)
                     else:
-                        status.stop()
                         renderer.handle(event)
 
         try:

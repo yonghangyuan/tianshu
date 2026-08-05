@@ -47,23 +47,30 @@ def create_input_handler(
             completions.extend(model_names)
 
         # 自定义补全器: 默认用命令+模型补全, @ 触发文件路径补全
-        class _SmartCompleter:
+        from prompt_toolkit.completion import Completer, Completion
+
+        class _SmartCompleter(Completer):
             def __init__(self, word_completer, cwd):
                 self._word = word_completer
                 self._cwd = cwd
 
             def get_completions(self, document, complete_event):
+                yield from self._get(document, complete_event)
+
+            async def get_completions_async(self, document, complete_event):
+                for c in self._get(document, complete_event):
+                    yield c
+
+            def _get(self, document, complete_event):
                 text = document.text_before_cursor
                 # 检查是否在 @ 上下文中
                 last_at = text.rfind("@")
                 if last_at >= 0:
                     after_at = text[last_at:]
                     if " " not in after_at and "\n" not in after_at:
-                        # 在 @ 上下文中 → 文件路径补全
-                        prefix = after_at[1:]  # @ 后面的部分
+                        prefix = after_at[1:]
                         import os as _os
                         search_dir = self._cwd
-                        # 如果 prefix 包含路径分隔符，调整搜索目录
                         if "/" in prefix or "\\" in prefix:
                             parent = _os.path.dirname(prefix)
                             if parent and _os.path.isdir(_os.path.join(str(self._cwd), parent)):
@@ -74,7 +81,6 @@ def create_input_handler(
                                 if entry.startswith(prefix) and not entry.startswith("."):
                                     full = _os.path.join(search_dir, entry)
                                     display = f"@{entry}{'/' if _os.path.isdir(full) else ''}"
-                                    from prompt_toolkit.completion import Completion
                                     yield Completion(
                                         entry + ("/" if _os.path.isdir(full) else ""),
                                         start_position=-len(prefix),
@@ -83,7 +89,6 @@ def create_input_handler(
                         except OSError:
                             pass
                         return
-                # 默认补全
                 if self._word:
                     yield from self._word.get_completions(document, complete_event)
 
