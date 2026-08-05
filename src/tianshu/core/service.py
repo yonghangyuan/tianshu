@@ -98,6 +98,7 @@ class AgentCore:
         self._confirm_pending: Any = None
         self._tool_registry: Any = None  # ToolRegistry
         self._permission_whitelist: set = set()  # "始终允许"的白名单
+        self._hooks: dict = {"pre_tool": [], "post_tool": []}  # Hook系统
         self._mode: str = "normal"       # normal / plan / auto
         self._policy_engine: Any = None  # PolicyEngine
 
@@ -227,6 +228,18 @@ class AgentCore:
     @property
     def orchestrator(self) -> Orchestrator:
         return self._orchestrator
+
+    def add_hook(self, event: str, callback) -> None:
+        """注册 Hook: pre_tool / post_tool。回调签名为 (tool_name, args) -> None"""
+        if event in self._hooks:
+            self._hooks[event].append(callback)
+
+    async def fork_session(self, ctx: AgentContext, name: str = "") -> AgentContext:
+        """从当前会话分叉一个新的会话 (#5 Session fork)。"""
+        new_ctx = AgentContext(session_id=f"fork_{name}_{int(time.time())}")
+        new_ctx.messages = list(ctx.messages[-10:])  # 保留最近10条
+        new_ctx.metadata = dict(ctx.metadata)
+        return new_ctx
 
     @property
     def last_reasoning(self) -> str:
