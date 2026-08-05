@@ -174,12 +174,23 @@ class Orchestrator:
                         await asyncio.sleep(1.0)
 
         agent.status = "busy"
+
+        # Worker隔离: 注入隔离目录到任务描述
+        task_with_isolation = task
+        if agent.skills and agent.skills[0].startswith("isolation_dir="):
+            iso_dir = agent.skills[0].split("=", 1)[1]
+            task_with_isolation = (
+                f"⚠️ 你的工作目录已隔离: {iso_dir}\n"
+                f"所有文件写入必须在此目录下进行。不要写主工作区。\n\n"
+                f"{task}"
+            )
+
         msg = TrigramMessage.create(
             source=AgentRef(Layer.REN, "orchestrator"),
             target=agent.ref,
             intent=task,
             payload={
-                "task": task,
+                "task": task_with_isolation,
                 "tools_allowed": agent.skills,
                 "model": agent.model,
             },
@@ -337,7 +348,16 @@ class Orchestrator:
     # ── 销毁 ──────────────────────────────────────────────────────
 
     async def destroy(self, agent: SubAgent) -> bool:
-        """销毁子 Agent，释放资源。"""
+        """销毁子 Agent，释放资源并清理隔离目录。"""
+        # 清理隔离目录
+        if agent.skills and agent.skills[0].startswith("isolation_dir="):
+            import shutil as _shutil
+            iso_dir = agent.skills[0].split("=", 1)[1]
+            try:
+                _shutil.rmtree(iso_dir, ignore_errors=True)
+            except Exception:
+                pass
+
         agent_id = agent.agent_id
         self.scheduler.unregister(agent.ref)
         self.by_name.pop(agent.name, None)

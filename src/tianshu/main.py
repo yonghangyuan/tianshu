@@ -665,19 +665,32 @@ def _main_sync() -> None:
             plan = asyncio.run(core.orchestrator.plan(task))
             _rich_console.print(f"[dim]{plan.summary()}[/dim]")
             _rich_console.print()
-            # 串行执行，每步显示进度
-            total = len(plan.steps)
-            for i, step in enumerate(plan.steps):
-                status = f"[{i+1}/{total}]" if total > 1 else ""
-                _rich_console.print(f"  [bold yellow]⏳[/bold yellow] {status} [cyan]{step.agent_name}[/cyan]: {step.task[:60]}...")
-                agent = asyncio.run(core.orchestrator.create_agent(
-                    step.agent_name, step.tools_allowed, "deepseek-v4-flash",
-                ))
-                msg = asyncio.run(core.orchestrator.dispatch(agent, step.task, deps=step.depends_on))
-                result = msg.payload.get("result", str(msg.intent)[:200]) if msg.payload else str(msg.intent)
-                _rich_console.print(f"  [bold green]✓[/bold green] {status} [cyan]{step.agent_name}[/cyan] 完成 → {result[:120]}")
-                asyncio.run(core.orchestrator.destroy(agent))
-            _rich_console.print(f"\n[bold green]═══ 编排完成 ({total} 步) ═══[/bold green]\n")
+
+            # 检测并行任务: "同时" 关键词或多步骤无依赖关系
+            can_parallel = (
+                "同时" in task or "分别" in task or "各自" in task or
+                all(not s.depends_on for s in plan.steps)
+            ) and len(plan.steps) >= 2
+
+            if can_parallel:
+                _rich_console.print(f"  [dim]→ 检测到可并行任务, 使用并行模式[/dim]")
+                tasks = [(s.agent_name, s.task, s.tools_allowed) for s in plan.steps]
+                results = asyncio.run(core.orchestrator.execute_parallel(tasks))
+                for name, result in results.items():
+                    _rich_console.print(f"  [bold green]✓[/bold green] [cyan]{name}[/cyan] → {result[:120]}")
+            else:
+                total = len(plan.steps)
+                for i, step in enumerate(plan.steps):
+                    status = f"[{i+1}/{total}]" if total > 1 else ""
+                    _rich_console.print(f"  [bold yellow]⏳[/bold yellow] {status} [cyan]{step.agent_name}[/cyan]: {step.task[:60]}...")
+                    agent = asyncio.run(core.orchestrator.create_agent(
+                        step.agent_name, step.tools_allowed, "deepseek-v4-flash",
+                    ))
+                    msg = asyncio.run(core.orchestrator.dispatch(agent, step.task, deps=step.depends_on))
+                    result = msg.payload.get("result", str(msg.intent)[:200]) if msg.payload else str(msg.intent)
+                    _rich_console.print(f"  [bold green]✓[/bold green] {status} [cyan]{step.agent_name}[/cyan] 完成 → {result[:120]}")
+                    asyncio.run(core.orchestrator.destroy(agent))
+            _rich_console.print(f"\n[bold green]═══ 编排完成 ({len(plan.steps)} 步) ═══[/bold green]\n")
             continue
         elif user_input in ("agents", "/agents"):
             _rich_console.print(core.orchestrator.status_summary())

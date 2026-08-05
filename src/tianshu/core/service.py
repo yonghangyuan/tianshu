@@ -1248,9 +1248,32 @@ class AgentCore:
         try:
             result = await self._execute_tool(tool_name, args)
             success = True
+            # 反馈闭环: 交付结果后更新传感器可靠性
+            if self._tool_registry and self._memory:
+                ti = self._tool_registry.get(tool_name)
+                if ti and getattr(ti, 'call_count', 0) > 0:
+                    try:
+                        from ..sdk.trigram import EntityDynamics
+                        _sensor_chars = getattr(ti, '_sensor_chars', None)
+                        if _sensor_chars:
+                            from ..sdk.trigram import update_sensor_reliability
+                            update_sensor_reliability(
+                                _sensor_chars, float(ti.call_count), time.time(),
+                                float(ti.call_count + ti.error_count),  # ground truth: total attempts
+                                EntityDynamics.from_preset("static"),
+                            )
+                    except Exception:
+                        pass
+                if ti:
+                    ti.call_count += 1
         except Exception as e:
             result = str(e)
             success = False
+            # 记录失败到 error_count
+            if self._tool_registry:
+                ti = self._tool_registry.get(tool_name)
+                if ti:
+                    ti.error_count += 1
 
         # ── 结果回报: 地→人 ──
         msg_result = TrigramMessage.create(
