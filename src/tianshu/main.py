@@ -503,6 +503,12 @@ def _main_sync() -> None:
         elif user_input in ("status", "/status"):
             _show_status(core, renderer)
             continue
+        elif user_input in ("compact", "/compact"):
+            _rich_console.print("[dim]正在压缩上下文...[/dim]")
+            ctx.messages = ctx.messages[-6:]  # 保留最近3轮
+            _rich_console.print(f"[dim]已压缩至 {len(ctx.messages)} 条消息[/dim]")
+            _rich_console.print()
+            continue
         elif user_input in ("cost", "/cost"):
             _show_cost(renderer)
             continue
@@ -513,12 +519,16 @@ def _main_sync() -> None:
                 _print_cmd_help()
             continue
         elif user_input in ("think", "/think"):
-            rc = core.last_reasoning
-            if rc:
-                from rich.panel import Panel as _P
-                _rich_console.print(_P(rc[:3000], title="Thinking", border_style="dim"))
+            renderer._show_reasoning = not renderer._show_reasoning
+            if renderer._show_reasoning:
+                _rich_console.print("[dim]💭 思考显示: 开启 (下次回复将展示完整推理)[/dim]")
+                # 显示历史推理
+                if renderer._reasoning_buf:
+                    from rich.panel import Panel as _P
+                    full = "".join(renderer._reasoning_buf)
+                    _rich_console.print(_P(full[:3000], title="Thinking (历史)", border_style="dim"))
             else:
-                _rich_console.print("[dim]  暂无推理内容[/dim]")
+                _rich_console.print("[dim]💭 思考显示: 折叠 (仅摘要)[/dim]")
             _rich_console.print()
             continue
         elif user_input in ("memory", "/memory"):
@@ -670,6 +680,8 @@ def _main_sync() -> None:
             continue
         elif user_input in ("clear", "/clear"):
             _rich_console.clear()
+            ctx.messages.clear()  # 同时清对话历史
+            _rich_console.print("[dim]屏幕+对话历史已清[/dim]")
             continue
         elif user_input.startswith("/orchestrate ") or user_input.startswith("orchestrate "):
             task = user_input.split(maxsplit=1)[1] if " " in user_input else user_input
