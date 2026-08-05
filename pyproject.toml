@@ -39,7 +39,7 @@ Repository = "https://github.com/yonghangyuan/tianshu"
 Issues = "https://github.com/yonghangyuan/tianshu/issues"
 
 [project.scripts]
-tianshu = "tianshu.gateway.tui:main"
+tianshu = "tianshu.main:main"
 tianshu-cli = "tianshu.main:main"
 tianshu-server = "tianshu.gateway.server:main"
 tianshu-feishu = "tianshu.gateway.feishu:main"
