@@ -694,7 +694,7 @@ def _main_sync() -> None:
         # ── 对话（每次独立 asyncio.run）──
         from tianshu.sdk.models import (
             AgentRequest, ToolCallConfirm, ToolCallStart, ToolCallResult,
-            ContentDelta, StreamError,
+            ContentDelta, StreamError, StreamDone,
         )
         from tianshu.gateway.cli import _handle_confirm, _format_tool_args as _brief_tool_args
 
