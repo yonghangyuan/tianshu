@@ -707,40 +707,56 @@ def _main_sync() -> None:
         from rich.status import Status as _Status
 
         async def _run_turn():
-            with _rich_console.status("[bold #60a5fa]Thinking...", spinner="dots") as status:
+            _t0 = time.time()
+            with _rich_console.status(f"[bold #60a5fa]Thinking... (0.0s)", spinner="dots") as status:
                 _tool_active = False
                 _first_content = True
-                async for event in core.run_stream(
-                    AgentRequest(input=resolved_input, task_type="conversation"),
-                    ctx=ctx,
-                ):
-                    if isinstance(event, ToolCallConfirm):
-                        status.stop()
-                        _handle_confirm(event, core)
-                        status.start()
-                    elif isinstance(event, ToolCallStart):
-                        if not _tool_active:
-                            status.start()
-                        _tool_active = True
-                        status.update(f"[bold yellow]⏳ {event.tool_name}[/bold yellow] {_brief_tool_args(event.tool_args)}")
-                    elif isinstance(event, ToolCallResult):
-                        icon = "[bold green]✓[/bold green]" if event.success else "[bold red]✗[/bold red]"
-                        status.update(f"{icon} {event.tool_name} ({event.elapsed_ms}ms)")
-                    elif isinstance(event, StreamError):
-                        status.stop()
-                        _rich_console.print(_Panel(
-                            f"[bold]{event.message}[/bold]",
-                            title="[bold red]✗ Error[/bold red]",
-                            border_style="red",
-                            padding=(1, 2),
-                        ))
-                    elif isinstance(event, ContentDelta):
-                        if _first_content:
+                _timer_task = None
+
+                async def _update_timer():
+                    while True:
+                        await asyncio.sleep(0.1)
+                        elapsed = time.time() - _t0
+                        current = status._live._renderable if hasattr(status, '_live') else None
+                        status.update(f"[bold #60a5fa]Thinking... ({elapsed:.1f}s)")
+
+                _timer_task = asyncio.create_task(_update_timer())
+
+                try:
+                    async for event in core.run_stream(
+                        AgentRequest(input=resolved_input, task_type="conversation"),
+                        ctx=ctx,
+                    ):
+                        if isinstance(event, ToolCallConfirm):
                             status.stop()
-                            _first_content = False
-                        renderer.handle(event)
-                    else:
-                        renderer.handle(event)
+                            _handle_confirm(event, core)
+                            status.start()
+                        elif isinstance(event, ToolCallStart):
+                            if not _tool_active:
+                                status.start()
+                            _tool_active = True
+                            status.update(f"[bold yellow]⏳ {event.tool_name}[/bold yellow] {_brief_tool_args(event.tool_args)}")
+                        elif isinstance(event, ToolCallResult):
+                            icon = "[bold green]✓[/bold green]" if event.success else "[bold red]✗[/bold red]"
+                            status.update(f"{icon} {event.tool_name} ({event.elapsed_ms}ms)")
+                        elif isinstance(event, StreamError):
+                            status.stop()
+                            _rich_console.print(_Panel(
+                                f"[bold]{event.message}[/bold]",
+                                title="[bold red]✗ Error[/bold red]",
+                                border_style="red",
+                                padding=(1, 2),
+                            ))
+                        elif isinstance(event, ContentDelta):
+                            if _first_content:
+                                status.stop()
+                                _first_content = False
+                            renderer.handle(event)
+                        else:
+                            renderer.handle(event)
+                finally:
+                    if _timer_task:
+                        _timer_task.cancel()
 
         try:
             asyncio.run(_run_turn())
