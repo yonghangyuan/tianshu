@@ -843,12 +843,20 @@ def _main_sync() -> None:
 
 
 def _show_cost(renderer) -> None:
-    """显示最近一次对话的 token 消耗。"""
+    """显示最近一次 + 会话累计 token 消耗。"""
     cost_info = getattr(renderer, '_last_cost', None)
+    total = getattr(renderer, '_total_cost', {"prompt": 0, "completion": 0})
     if not cost_info:
         _rich_console.print("[dim]暂无消耗数据[/dim]")
         return
-    _rich_console.print(f"  ↓{cost_info.get('prompt', 0)//1000}K ↑{cost_info.get('completion', 0)//1000}K  {cost_info.get('elapsed', 0):.1f}s  [dim]{cost_info.get('model', '')}[/dim]\n")
+    _rich_console.print(
+        f"  上次: ↓{cost_info.get('prompt',0)//1000}K ↑{cost_info.get('completion',0)//1000}K  {cost_info.get('elapsed',0):.1f}s"
+    )
+    if total["prompt"] > cost_info.get("prompt", 0):
+        _rich_console.print(
+            f"  累计: ↓{total['prompt']//1000}K ↑{total['completion']//1000}K  [dim]{cost_info.get('model','')}[/dim]"
+        )
+    _rich_console.print()
 
 
 def _show_tools(core) -> None:

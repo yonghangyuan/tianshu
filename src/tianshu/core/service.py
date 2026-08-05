@@ -505,12 +505,26 @@ class AgentCore:
             request.input, ctx, level, provider_info, provider
         )
 
+        # 注入上一轮工具摘要
+        if hasattr(ctx, 'turns') and ctx.turns:
+            last = ctx.turns[-1]
+            if last.tool_results:
+                tool_names = [t.get('name', '?') for t in last.tool_results]
+                messages.append({
+                    "role": "system",
+                    "content": f"[上轮工具调用: {', '.join(tool_names)}]",
+                })
+
         # 通知用户上下文压缩
         if comp_meta:
+            tail_info = {1: "保留最近3轮", 2: "保留最近2轮", 3: "保留最近1轮"}
             yield ContentDelta(
-                text=f"\n💾 上下文已压缩 (L{comp_meta['level']}: "
-                     f"{comp_meta['before_chars']}→{comp_meta['after_chars']}字符, "
-                     f"审计ID: {comp_meta['stored_decision_id'][:8]})\n"
+                text=(
+                    f"\n💾 上下文已压缩 (L{comp_meta['level']}: "
+                    f"{comp_meta['before_chars']}→{comp_meta['after_chars']}字符, "
+                    f"{tail_info.get(comp_meta['level'], '')}, "
+                    f"审计ID: {comp_meta['stored_decision_id'][:8]})\n"
+                )
             )
 
         # 3.4 记忆：预取 + 触发权重提升
@@ -1036,12 +1050,17 @@ class AgentCore:
             return 0  # PermissionLevel.SAFE
         return 1  # PermissionLevel.READ（默认保守）
 
-    def confirm_tool(self, allowed: bool) -> None:
+    def confirm_tool(self, allowed: bool, *, always: bool = False) -> None:
         """确认/拒绝待处理的工具调用。
 
         由 CLI/TUI 在用户做出选择后调用。
+        always=True → 加入白名单并持久化 (pip install 目录下的 tool_whitelist.json)
         """
         self._confirm_allowed = allowed
+        if always and allowed and self._confirm_pending:
+            # 记住"始终允许"
+            # 从 pending 上下文中获取工具名（由 main.py 设置）
+            pass  # 在 main.py 的 _handle_confirm 中处理
         if self._confirm_pending:
             self._confirm_pending.set()
 

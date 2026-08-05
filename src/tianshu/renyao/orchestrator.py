@@ -109,21 +109,31 @@ class Orchestrator:
         *,
         world_level: WorldLevel = WorldLevel.MEASURABLE,
         time_scale: TimeScale | None = None,
+        isolate: bool = True,
     ) -> SubAgent:
         """创建一个子 Agent。
 
         Args:
-            name: 人类可读名称 (如 "searcher")
-            skills: 允许的工具名列表 (如 ["web_search"])
+            name: 人类可读名称
+            skills: 允许的工具名列表
             model: 底模型
             world_level: 认知层级
-            time_scale: 生命节奏 (默认 1s PUSH)
+            time_scale: 生命节奏
+            isolate: True=创建隔离工作目录, 防止子Agent污染主工作区
         """
         agent_id = f"sub_{uuid.uuid4().hex[:8]}"
         ref = AgentRef(Layer.DI, f"subagent:{name}", instance_id=agent_id)
 
         if time_scale is None:
             time_scale = TimeScale(tick_ms=1000)
+
+        # Worker isolation (#13): 子Agent的写操作限在临时目录
+        work_dir = ""
+        if isolate:
+            import tempfile
+            work_dir = tempfile.mkdtemp(prefix=f"tianshu_agent_{name}_")
+            # 将隔离目录路径写入 agent 元数据, dispatch 时使用
+            skills = [f"isolation_dir={work_dir}"] + skills
 
         agent = SubAgent(
             agent_id=agent_id,
@@ -251,6 +261,78 @@ class Orchestrator:
                 await asyncio.sleep(0.5)
 
         return results
+
+    # ── 并行编排 (#14) ──────────────────────────────────────────
+
+    async def execute_parallel(
+        self,
+        tasks: list[tuple[str, str, list[str]]],
+        model: str = "deepseek-v4-flash",
+    ) -> dict[str, str]:
+        """并行执行多个子Agent任务。
+
+        Args:
+            tasks: [(agent_name, task_description, skills), ...]
+
+        Returns:
+            {agent_name: result_text}
+        """
+        import asyncio as _aio
+
+        async def _run_one(name, desc, skills):
+            agent = await self.create_agent(name, skills, model)
+            msg = await self.dispatch(agent, desc)
+            result = msg.payload.get("result", str(msg.intent)[:500]) if msg.payload else ""
+            return name, result
+
+        coros = [_run_one(n, d, s) for n, d, s in tasks]
+        results = await _aio.gather(*coros, return_exceptions=True)
+
+        output: dict[str, str] = {}
+        for r in results:
+            if isinstance(r, Exception):
+                output["error"] = str(r)
+            else:
+                output[r[0]] = r[1]
+        return output
+
+    # ── Adversarial verify (#15) ────────────────────────────────
+
+    async def verify(
+        self,
+        claim: str,
+        verifier_count: int = 2,
+    ) -> dict:
+        """调度多个Agent独立验证同一个主张。
+
+        Args:
+            claim: 需要验证的主张
+            verifier_count: 验证者数量
+
+        Returns:
+            {"verified": bool, "votes": [{agent, verdict, reason}]}
+        """
+        votes = []
+        for i in range(verifier_count):
+            agent = await self.create_agent(
+                f"verifier_{i}", ["web_search", "read_file"],
+            )
+            task = (
+                f"验证以下主张是否为真。默认立场: 怀疑——尽量证伪。\n"
+                f"主张: {claim}\n"
+                f"输出格式: VERIFIED 或 REFUTED, 然后给出理由。"
+            )
+            msg = await self.dispatch(agent, task)
+            result = msg.payload.get("result", "") if msg.payload else ""
+            verdict = "REFUTED" if "REFUTED" in result.upper() else "VERIFIED"
+            votes.append({"agent": agent.name, "verdict": verdict, "reason": result[:200]})
+            await self.destroy(agent)
+
+        verified_count = sum(1 for v in votes if v["verdict"] == "VERIFIED")
+        return {
+            "verified": verified_count > verifier_count // 2,
+            "votes": votes,
+        }
 
     # ── 销毁 ──────────────────────────────────────────────────────
 

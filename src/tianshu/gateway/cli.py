@@ -68,6 +68,7 @@ class StreamRenderer:
         self._t0 = time.time()
         self._flushed_len = 0  # 已 flush 的字符数
         self._last_cost: dict = {}  # /cost 查询用
+        self._total_cost: dict = {"prompt": 0, "completion": 0}  # 会话累计
 
     def reset(self) -> None:
         self._content_buf.clear()
@@ -149,6 +150,8 @@ class StreamRenderer:
                 "elapsed": event.elapsed_ms / 1000.0,
                 "model": event.model_used,
             }
+            self._total_cost["prompt"] += event.prompt_tokens
+            self._total_cost["completion"] += event.completion_tokens
             # 渲染剩余内容（段落边界之后的部分）
             full = "".join(self._content_buf)
             remaining = full[self._flushed_len:].strip()

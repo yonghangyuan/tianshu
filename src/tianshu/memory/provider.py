@@ -169,3 +169,19 @@ class SQLiteMemoryProvider(BaseMemoryProvider):
         conn = await self._get_conn()
         await conn.execute("DELETE FROM memory")
         await conn.commit()
+
+    async def export_markdown(self) -> str:
+        """导出为 MEMORY.md 格式 (#16)。"""
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT key, value, category, created_at FROM memory ORDER BY category, created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        lines = ["# Tianshu Memory Export\n"]
+        current_cat = ""
+        for key, value, category, ts in rows:
+            if category != current_cat:
+                current_cat = category
+                lines.append(f"\n## {category}\n")
+            lines.append(f"- **{key}**: {value[:200]}")
+        return "\n".join(lines)

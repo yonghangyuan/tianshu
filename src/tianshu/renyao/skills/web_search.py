@@ -17,7 +17,12 @@ from .browser import _extract_text, _entity_decode
 
 class WebSearchSkill(BaseSkill):
     name = "web-search"
-    description = "自建搜索引擎——直接请求 Bing/百度 HTML 结果页，解析返回。搜微信文章请用 sogou_weixin，不要用此工具。"
+    description = (
+        "自建搜索引擎——直接请求 Bing/百度 HTML 结果页, 解析返回。\n"
+        "用于: 查资料、事实核查、找最新信息。\n"
+        "不用于: 搜微信公众号(用 sogou_weixin)、搜论文(用 search_papers)。\n"
+        "中文搜索用完整句子(如'2026年AI应用趋势'), 不要用短关键词。"
+    )
     trigram = "地"
     trigger_keywords = ["搜索", "search", "查一下", "帮我搜"]
 
@@ -37,7 +42,7 @@ class WebSearchSkill(BaseSkill):
         )]
 
     async def _search(self, query: str, count: int = 5, **kwargs) -> str:
-        # 依次尝试：必应中国 → 搜狗 → 必应国际 → 百度
+        count = min(count, 20)  # 硬上限防止上下文爆炸
         for engine in (
             self._search_cn_bing,
             self._search_sogou,
