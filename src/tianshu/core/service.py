@@ -837,6 +837,8 @@ class AgentCore:
 
                 # ── 执行工具 ──
                 t0_tool = time.time()
+                diff_preview = _try_diff(name, args)  # write_file 时生成 diff
+
                 try:
                     output = await self._execute_tool(name, args)
                     success = True
@@ -857,10 +859,15 @@ class AgentCore:
                 elapsed_tool = int((time.time() - t0_tool) * 1000)
                 _s_tool(name, result_text[:60], elapsed_tool)
 
+                # 附 diff 到结果中
+                result_display = result_text[:500]
+                if diff_preview and success:
+                    result_display = f"{result_text[:200]}\n\n--- Diff ---\n{diff_preview[:500]}"
+
                 yield ToolCallResult(
                     tool_name=name,
                     success=success,
-                    output=result_text[:500],
+                    output=result_display,
                     elapsed_ms=elapsed_tool,
                 )
 
@@ -1262,4 +1269,49 @@ def _brief_args(args: dict) -> str:
             s = s[:57] + "..."
         items.append(f"{k}={s}")
     return ", ".join(items) if items else "(none)"
+
+
+def _compute_diff(old: str, new: str, filepath: str = "", context_lines: int = 3) -> str:
+    """生成 unified diff——写文件前预览变更。"""
+    import difflib
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    # 确保末尾有换行（difflib 要求）
+    if old_lines and not old_lines[-1].endswith("\n"):
+        old_lines[-1] += "\n"
+    if new_lines and not new_lines[-1].endswith("\n"):
+        new_lines[-1] += "\n"
+
+    diff = difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=f"a/{filepath}" if filepath else "a/old",
+        tofile=f"b/{filepath}" if filepath else "b/new",
+        n=context_lines,
+    )
+    result = "".join(diff)
+    if not result:
+        return "(无变更)"
+    return result
+
+
+def _try_diff(tool_name: str, args: dict) -> str:
+    """对写文件操作生成 diff 预览。"""
+    if tool_name != "write_file":
+        return ""
+    path = args.get("path") or args.get("file_path") or args.get("filename") or ""
+    content = args.get("content") or ""
+    if not path or not content:
+        return ""
+    try:
+        import os as _os
+        if _os.path.exists(path):
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                old_content = f.read()
+            if old_content != content:
+                return _compute_diff(old_content, content, path)
+        else:
+            return f"[新文件] {path}\n+ {len(content)} chars"
+    except Exception:
+        return ""
+    return ""
 
