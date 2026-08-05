@@ -187,14 +187,28 @@ class AgentCore:
             import json as _json
             self._permission_whitelist = set(_json.loads(_wpath.read_text(encoding="utf-8")))
         # 自动注入项目上下文 (类似 Claude Code 的 CLAUDE.md)
-        _project_context = ""
         _cwd = Path.cwd()
+        _project_slug = str(_cwd).replace(":\\", "--").replace("\\", "-").replace("/", "-")
+        _project_dir = Path.home() / ".tianshu" / "projects" / _project_slug
+        _project_dir.mkdir(parents=True, exist_ok=True)
+
+        _project_context = ""
         for _cand in ["CLAUDE.md", "README.md", "CONTRIBUTING.md"]:
             _cf = _cwd / _cand
             if _cf.exists():
                 _project_context += f"\n\n## 项目上下文 ({_cand})\n{_cf.read_text(encoding='utf-8', errors='replace')[:3000]}\n"
-                break  # 只读第一个存在的
+                break
+
+        # 自动加载项目记忆 (类似 Claude Code 的 MEMORY.md)
+        _pmem = _project_dir / "MEMORY.md"
+        if _pmem.exists():
+            _project_context += f"\n\n## 项目记忆\n{_pmem.read_text(encoding='utf-8', errors='replace')[:2000]}\n"
+
         full_prompt = (_project_context + "\n\n" + system_prompt) if _project_context else system_prompt
+
+        # 存储项目 context 路径以供后续保存
+        self._project_dir = _project_dir
+        self._project_slug = _project_slug
 
         self._context_engine.system_prompt = full_prompt
         self._orchestrator.setup(self)

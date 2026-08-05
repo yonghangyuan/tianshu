@@ -491,6 +491,12 @@ def _main_sync() -> None:
         elif user_input in ("skills", "/skills"):
             _show_skills(core.skills.loader, core.skills.observer)
             continue
+        elif user_input in ("project", "/project"):
+            _show_project(core)
+            continue
+        elif user_input.startswith("/project save"):
+            _save_project_memory(core)
+            continue
         elif user_input in ("cost", "/cost"):
             _show_cost(renderer)
             continue
@@ -853,6 +859,41 @@ def _main_sync() -> None:
         session_store.save(ctx, title=user_input[:50])
 
     _rich_console.print("[dim]天枢已关闭[/dim]")
+
+
+def _show_project(core) -> None:
+    """显示当前项目信息。"""
+    slug = getattr(core, '_project_slug', '')
+    pdir = getattr(core, '_project_dir', None)
+    if not pdir:
+        _rich_console.print("[dim]未检测到项目上下文[/dim]")
+        return
+    mem = pdir / "MEMORY.md"
+    _rich_console.print(f"  项目: [cyan]{slug}[/cyan]")
+    _rich_console.print(f"  记忆: [dim]{'MEMORY.md' if mem.exists() else '(无)'}[/dim]")
+    _rich_console.print(f"  路径: [dim]{pdir}[/dim]")
+    if mem.exists():
+        size = len(mem.read_text(encoding="utf-8", errors="replace"))
+        _rich_console.print(f"  大小: {size} chars")
+    _rich_console.print()
+
+
+def _save_project_memory(core) -> None:
+    """保存项目记忆到 MEMORY.md。"""
+    pdir = getattr(core, '_project_dir', None)
+    if not pdir:
+        _rich_console.print("[dim]未检测到项目上下文[/dim]")
+        return
+    mem = pdir / "MEMORY.md"
+    # 收集最近的对话摘要
+    provider = core._memory.provider
+    recent = asyncio.run(provider.list_recent(20))
+    lines = [f"# 项目记忆 · {core._project_slug}\n", f"> 更新时间: {time.strftime('%Y-%m-%d %H:%M')}\n"]
+    for r in recent:
+        if r['category'] in ('conversation', 'fact', 'delegation'):
+            lines.append(f"- [{r['category']}] {r['key']}: {r['value'][:200]}")
+    mem.write_text("\n".join(lines), encoding="utf-8")
+    _rich_console.print(f"  ✅ 已保存 {len(recent)} 条记忆 → {mem}\n")
 
 
 def _show_cost(renderer) -> None:
