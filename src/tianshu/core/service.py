@@ -193,16 +193,19 @@ class AgentCore:
         _project_dir.mkdir(parents=True, exist_ok=True)
 
         _project_context = ""
-        for _cand in ["TIANSHU.md", "README.md", "CONTRIBUTING.md"]:
+        # 读: 兼容 CLAUDE.md (复用) + TIANSHU.md (天枢自产)
+        for _cand in ["CLAUDE.md", "TIANSHU.md", "README.md", "CONTRIBUTING.md"]:
             _cf = _cwd / _cand
             if _cf.exists():
                 _project_context += f"\n\n## 项目上下文 ({_cand})\n{_cf.read_text(encoding='utf-8', errors='replace')[:3000]}\n"
                 break
 
-        # 自动加载项目记忆 (类似 Claude Code 的 MEMORY.md)
-        _pmem = _project_dir / "MEMORY.md"
-        if _pmem.exists():
-            _project_context += f"\n\n## 项目记忆\n{_pmem.read_text(encoding='utf-8', errors='replace')[:2000]}\n"
+        # 加载项目记忆 (先读天枢的, 再读老 MEMORY.md 兼容)
+        for _mem_name in ["TIANSHU_MEMORY.md", "MEMORY.md"]:
+            _pmem = _project_dir / _mem_name
+            if _pmem.exists():
+                _project_context += f"\n\n## 项目记忆 ({_mem_name})\n{_pmem.read_text(encoding='utf-8', errors='replace')[:2000]}\n"
+                break
 
         full_prompt = (_project_context + "\n\n" + system_prompt) if _project_context else system_prompt
 

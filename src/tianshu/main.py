@@ -868,9 +868,9 @@ def _show_project(core) -> None:
     if not pdir:
         _rich_console.print("[dim]未检测到项目上下文[/dim]")
         return
-    mem = pdir / "MEMORY.md"
+    mem = pdir / "TIANSHU_MEMORY.md"
     _rich_console.print(f"  项目: [cyan]{slug}[/cyan]")
-    _rich_console.print(f"  记忆: [dim]{'MEMORY.md' if mem.exists() else '(无)'}[/dim]")
+    _rich_console.print(f"  记忆: [dim]{'TIANSHU_MEMORY.md' if mem.exists() else '(无)'}[/dim]")
     _rich_console.print(f"  路径: [dim]{pdir}[/dim]")
     if mem.exists():
         size = len(mem.read_text(encoding="utf-8", errors="replace"))
@@ -879,12 +879,12 @@ def _show_project(core) -> None:
 
 
 def _save_project_memory(core) -> None:
-    """保存项目记忆到 MEMORY.md。"""
+    """保存项目记忆到 TIANSHU_MEMORY.md。"""
     pdir = getattr(core, '_project_dir', None)
     if not pdir:
         _rich_console.print("[dim]未检测到项目上下文[/dim]")
         return
-    mem = pdir / "MEMORY.md"
+    mem = pdir / "TIANSHU_MEMORY.md"
     # 收集最近的对话摘要
     provider = core._memory.provider
     recent = asyncio.run(provider.list_recent(20))
