@@ -706,19 +706,40 @@ def _main_sync() -> None:
         from rich.panel import Panel as _Panel
         from rich.status import Status as _Status
 
+        def _flush_thinking(renderer, console):
+            """展示折叠的思考面板（如果思考被隐藏且未展示过）。"""
+            if not renderer._reasoning_buf or renderer._show_reasoning:
+                return
+            if getattr(renderer, '_thinking_shown', False):
+                return
+            renderer._thinking_shown = True
+            from rich.panel import Panel as _Pnl2
+            from rich.text import Text as _Txt2
+            full = "".join(renderer._reasoning_buf)
+            first_line = full.split("\n")[0][:120] if full else ""
+            if len(full) - len(first_line) > 10:
+                console.print(_Pnl2(
+                    _Txt2(f"{first_line}...", style="dim italic"),
+                    title=f"[dim]Thinking ({len(full)} chars)[/dim]",
+                    subtitle="[dim]/think 展开[/dim]",
+                    border_style="dim", padding=(0, 1),
+                ))
+                console.print()
+
         async def _run_turn():
             import time as _time
             _t0 = _time.time()
+            _content_buf: list = []  # 工具执行期间缓冲内容
+
             with _rich_console.status(f"[bold #60a5fa]Thinking... (0.0s)", spinner="dots") as status:
                 _tool_active = False
-                _first_content = True
+                _content_started = False
                 _timer_task = None
 
                 async def _update_timer():
                     while True:
                         await asyncio.sleep(0.1)
                         elapsed = _time.time() - _t0
-                        current = status._live._renderable if hasattr(status, '_live') else None
                         status.update(f"[bold #60a5fa]Thinking... ({elapsed:.1f}s)")
 
                 _timer_task = asyncio.create_task(_update_timer())
@@ -749,23 +770,22 @@ def _main_sync() -> None:
                                 padding=(1, 2),
                             ))
                         elif isinstance(event, ContentDelta):
-                            if _first_content:
-                                status.stop()
-                                _first_content = False
-                                # 先展示思考摘要 + 空行, 再渲染内容
-                                if renderer._reasoning_buf and not renderer._show_reasoning:
-                                    from rich.panel import Panel as _Pnl2
-                                    from rich.text import Text as _Txt2
-                                    full = "".join(renderer._reasoning_buf)
-                                    first_line = full.split("\n")[0][:120] if full else ""
-                                    if len(full) - len(first_line) > 10:
-                                        _rich_console.print(_Pnl2(
-                                            _Txt2(f"{first_line}...", style="dim italic"),
-                                            title=f"[dim]Thinking ({len(full)} chars)[/dim]",
-                                            subtitle="[dim]/think 展开[/dim]",
-                                            border_style="dim", padding=(0, 1),
-                                        ))
-                                        _rich_console.print()
+                            if _tool_active:
+                                _content_buf.append(event)  # 工具未完成前缓存
+                            else:
+                                if not _content_started:
+                                    status.stop()
+                                    _content_started = True
+                                    _flush_thinking(renderer, _rich_console)
+                                renderer.handle(event)
+                        elif isinstance(event, StreamDone):
+                            status.stop()
+                            # 先展示思考面板
+                            _flush_thinking(renderer, _rich_console)
+                            # 再渲染工具期间缓存的内容
+                            for ev in _content_buf:
+                                renderer.handle(ev)
+                            # 最后渲染完成统计
                             renderer.handle(event)
                         else:
                             renderer.handle(event)
