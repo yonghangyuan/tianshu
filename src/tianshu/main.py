@@ -500,6 +500,9 @@ def _main_sync() -> None:
         elif user_input.startswith("/project save"):
             _save_project_memory(core)
             continue
+        elif user_input in ("status", "/status"):
+            _show_status(core, renderer)
+            continue
         elif user_input in ("cost", "/cost"):
             _show_cost(renderer)
             continue
@@ -797,21 +800,18 @@ def _main_sync() -> None:
                             ))
                         elif isinstance(event, ContentDelta):
                             if _tool_active:
-                                _content_buf.append(event)  # 工具未完成前缓存
+                                _content_buf.append(event)  # 工具执行中→缓存
                             else:
                                 if not _content_started:
                                     status.stop()
                                     _content_started = True
                                     _flush_thinking(renderer, _rich_console)
-                                renderer.handle(event)
+                                renderer.handle(event)  # 工具未激活→直接渲染
                         elif isinstance(event, StreamDone):
                             status.stop()
-                            # 先展示思考面板
                             _flush_thinking(renderer, _rich_console)
-                            # 再渲染工具期间缓存的内容
-                            for ev in _content_buf:
+                            for ev in _content_buf:  # 渲染工具期间缓存的内容
                                 renderer.handle(ev)
-                            # 最后渲染完成统计
                             renderer.handle(event)
                         else:
                             renderer.handle(event)
@@ -862,6 +862,17 @@ def _main_sync() -> None:
         session_store.save(ctx, title=user_input[:50])
 
     _rich_console.print("[dim]天枢已关闭[/dim]")
+
+
+def _show_status(core, renderer) -> None:
+    """显示系统状态。"""
+    cost = getattr(renderer, '_last_cost', {}) or {}
+    _rich_console.print(f"  模型: [cyan]{cost.get('model', '?')}[/cyan]")
+    _rich_console.print(f"  模式: [dim]{core._mode}[/dim]")
+    _rich_console.print(f"  记忆: {asyncio.run(core.memory.count())} 条")
+    _rich_console.print(f"  子Agent: {core.orchestrator.active_count} 活跃")
+    _rich_console.print(f"  项目: [dim]{getattr(core, '_project_slug', '?')}[/dim]")
+    _rich_console.print()
 
 
 def _handle_loop(user_input: str, core) -> None:
