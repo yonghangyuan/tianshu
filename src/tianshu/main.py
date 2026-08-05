@@ -692,7 +692,10 @@ def _main_sync() -> None:
         resolved_input = _resolve_at_refs(user_input)
 
         # ── 对话（每次独立 asyncio.run）──
-        from tianshu.sdk.models import AgentRequest, ToolCallConfirm, ToolCallStart, ToolCallResult, StreamError
+        from tianshu.sdk.models import (
+            AgentRequest, ToolCallConfirm, ToolCallStart, ToolCallResult,
+            ContentDelta, StreamError,
+        )
         from tianshu.gateway.cli import _handle_confirm, _format_tool_args as _brief_tool_args
 
         if resolved_input != user_input:
