@@ -40,6 +40,36 @@ class MapToolsSkill(BaseSkill):
                 permission_level=0,
             ),
             SkillTool(
+                name="map_analyze",
+                description=(
+                    "Analyze satellite/aerial imagery using spatial intelligence model (SenseNova-SI-1.3).\n"
+                    "Use for: satellite image analysis, building detection, spatial layout understanding,\n"
+                    "distance estimation, occlusion reasoning, viewpoint transformation.\n"
+                    "The model excels at understanding 3D spatial relationships from 2D images.\n"
+                    "Do NOT use for: general photos (use vision tool instead)."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "image": {
+                            "type": "string",
+                            "description": "Image path or URL (satellite/aerial/drone imagery)",
+                        },
+                        "task": {
+                            "type": "string",
+                            "description": "Spatial analysis task. Options: detect_buildings, analyze_layout, estimate_distances, count_objects, describe_scene, custom",
+                        },
+                        "prompt": {
+                            "type": "string",
+                            "description": "Custom prompt for spatial analysis. Required if task=custom.",
+                        },
+                    },
+                    "required": ["image"],
+                },
+                handler=self._analyze_map,
+                permission_level=0,
+            ),
+            SkillTool(
                 name="map_route",
                 description=(
                     "Calculate a route between two points. Uses A* on road network.\n"
@@ -59,6 +89,107 @@ class MapToolsSkill(BaseSkill):
                 permission_level=0,
             ),
         ]
+
+    # ── 空间智能分析 (SenseNova-SI) ───────────────────────────────
+
+    async def _analyze_map(
+        self, image: str, task: str = "describe_scene", prompt: str = "", **kwargs
+    ) -> str:
+        """调用商汤 SenseNova-SI-1.3 进行空间智能分析。"""
+        import os, base64 as _b64
+        from pathlib import Path as _P
+
+        # 获取 API Key
+        api_key = os.environ.get("SENSENOVA_API_KEY", "")
+        if not api_key:
+            try:
+                from tianshu.core.setup import load_user_keys
+                keys = load_user_keys()
+                api_key = keys.get("sensenova", "")
+            except Exception:
+                pass
+        if not api_key:
+            return (
+                "❌ 未配置 SENSENOVA_API_KEY。\n"
+                "申请地址: https://platform.sensenova.cn\n"
+                "配置: /setup → 添加 sensenova Key"
+            )
+
+        # 图像 → base64
+        try:
+            if image.startswith(("http://", "https://")):
+                import httpx
+                async with httpx.AsyncClient(timeout=15) as cl:
+                    r = await cl.get(image)
+                    r.raise_for_status()
+                    img_b64 = _b64.b64encode(r.content).decode()
+            elif _P(image).exists():
+                img_b64 = _b64.b64encode(_P(image).read_bytes()).decode()
+            else:
+                return f"❌ 图像不存在: {image}"
+        except Exception as e:
+            return f"❌ 读取图像失败: {e}"
+
+        # 任务 → prompt 映射
+        task_prompts = {
+            "detect_buildings": (
+                "Analyze this satellite/aerial image. Detect and count all buildings. "
+                "For each building, estimate its approximate footprint area and describe its shape. "
+                "Identify any large structures, warehouses, or unusual buildings."
+            ),
+            "analyze_layout": (
+                "Analyze the spatial layout of this scene. Describe the arrangement of roads, "
+                "buildings, open spaces, and natural features. Identify any patterns in the "
+                "urban/rural planning. Note access routes and bottlenecks."
+            ),
+            "estimate_distances": (
+                "Estimate distances between key features in this image. Identify the scale "
+                "by looking for standard-sized objects (cars ~4.5m, road lanes ~3.5m). "
+                "Calculate distances between major landmarks."
+            ),
+            "count_objects": (
+                "Count and categorize all visible objects in this image: vehicles (cars, trucks, "
+                "buses), buildings, trees, water bodies, roads, bridges. Group by type and report counts."
+            ),
+            "describe_scene": (
+                "Describe this scene in detail from a spatial intelligence perspective. "
+                "What is the terrain like? What human structures are visible? "
+                "What is the approximate scale? What spatial relationships do you observe?"
+            ),
+        }
+
+        analysis_prompt = prompt or task_prompts.get(task, task_prompts["describe_scene"])
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as cl:
+                resp = await cl.post(
+                    "https://api.sensenova.cn/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "SenseNova-SI-1.3",
+                        "messages": [{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": analysis_prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                            ],
+                        }],
+                        "max_tokens": 1500,
+                    },
+                )
+
+                if resp.status_code != 200:
+                    return f"❌ SenseNova API 错误 (HTTP {resp.status_code}): {resp.text[:300]}"
+
+                data = resp.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                return f"🗺️ 空间智能分析 [{task}]:\n\n{content or '(空回复)'}"
+
+        except Exception as e:
+            return f"❌ SenseNova 调用失败: {e}"
 
     # ── GeoJSON 解析 ──────────────────────────────────────────────
 
