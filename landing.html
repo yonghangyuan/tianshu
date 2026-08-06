@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>天枢 Tianshu · 北斗七星第一星</title>
+<style>
+:root {
+  --bg: #080d1f;
+  --surface: #0f1a33;
+  --gold: #e2c860;
+  --gold-dim: #a8963a;
+  --blue: #2563eb;
+  --blue-bright: #3b82f6;
+  --text: #c9d1d9;
+  --text-dim: #64748b;
+  --border: #1e2a4a;
+  --red: #ef4444;
+  --green: #22c55e;
+  --purple: #8b5cf6;
+  --cyan: #06b6d4;
+  --slide-w: 1920;
+  --slide-h: 1080;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #000;
+  overflow: hidden;
+  height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+}
+.mono { font-family: "JetBrains Mono", "Cascadia Code", monospace; }
+
+/* Slides container */
+.deck { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
+.slide {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: var(--bg);
+  opacity: 0; transform: scale(0.98);
+  transition: opacity 0.6s, transform 0.6s;
+  pointer-events: none;
+  padding: 60px 120px;
+}
+.slide.active { opacity: 1; transform: scale(1); pointer-events: auto; z-index: 1; }
+
+/* Nav */
+.nav { position: fixed; bottom: 30px; right: 30px; z-index: 100;
+  display: flex; gap: 8px; align-items: center; }
+.nav button { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text-dim); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+.nav button:hover { background: rgba(255,255,255,0.15); color: #fff; }
+.nav .dots { display: flex; gap: 6px; margin: 0 12px; }
+.nav .dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.2); transition: 0.3s; }
+.nav .dot.active { background: var(--gold); width: 18px; border-radius: 3px; }
+
+/* Shared */
+h1 { font-size: 56px; font-weight: 900; letter-spacing: 0.08em; }
+h2 { font-size: 32px; font-weight: 700; margin-bottom: 30px; }
+.gold { color: var(--gold); }
+.dim { color: var(--text-dim); }
+.tag { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px;
+  background: rgba(226,200,96,0.15); color: var(--gold); margin: 3px; }
+
+/* Slide 1 - Hero */
+.s1-bg { position: absolute; inset: 0; overflow: hidden; }
+.s1-stars { position: absolute; inset: 0; }
+.star { position: absolute; width: 2px; height: 2px; background: #fff; border-radius: 50%;
+  animation: twinkle 3s ease-in-out infinite alternate; }
+@keyframes twinkle { 0% { opacity: 0.3; } 100% { opacity: 1; } }
+.s1-constellation { position: absolute; top: 15%; right: 10%; width: 300px; height: 400px; opacity: 0.4; }
+.s1-constellation svg { width: 100%; height: 100%; }
+.s1-cloud { position: absolute; bottom: 0; left: 0; right: 0; height: 200px;
+  background: linear-gradient(transparent, rgba(226,200,96,0.03)); }
+.s1-content { position: relative; z-index: 2; text-align: center; }
+.s1-title { font-size: 96px; font-weight: 900; letter-spacing: 0.12em;
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.s1-sub { font-size: 22px; color: var(--text-dim); margin-top: 12px; letter-spacing: 0.1em; }
+.s1-line { width: 60px; height: 1px; background: var(--gold); margin: 24px auto; }
+.s1-tags { margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+/* Slide 2 - Architecture */
+.s2-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 30px; width: 100%; max-width: 1400px; }
+.s2-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 40px 30px; text-align: center; transition: 0.3s; }
+.s2-card:hover { border-color: var(--gold); transform: translateY(-4px); }
+.s2-card.tian { border-top: 3px solid var(--red); }
+.s2-card.ren { border-top: 3px solid var(--purple); }
+.s2-card.di { border-top: 3px solid var(--cyan); }
+.s2-emoji { font-size: 48px; margin-bottom: 16px; }
+.s2-name { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+.s2-en { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
+.s2-desc { font-size: 14px; color: var(--text-dim); line-height: 1.6; }
+
+/* Slide 3 - Capabilities grid */
+.s3-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; width: 100%; max-width: 1400px; }
+.s3-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 24px 20px; text-align: center; }
+.s3-icon { font-size: 32px; margin-bottom: 10px; }
+.s3-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.s3-desc { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+/* Slide 4 - Stats */
+.s4-stats { display: flex; gap: 60px; justify-content: center; margin-bottom: 40px; }
+.s4-stat { text-align: center; }
+.s4-num { font-size: 72px; font-weight: 900; color: var(--gold); }
+.s4-label { font-size: 16px; color: var(--text-dim); margin-top: 4px; }
+.s4-status { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 30px 40px; max-width: 800px; width: 100%; }
+.s4-row { display: flex; justify-content: space-between; padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 15px; }
+.s4-row .label { color: var(--text-dim); }
+.s4-row .value { color: var(--text); font-weight: 600; }
+.s4-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); margin-right: 6px; }
+
+/* Slide 5 - Code */
+.s5-code { background: #0a0e1a; border: 1px solid var(--border); border-radius: 12px;
+  padding: 30px 40px; font-size: 14px; line-height: 1.8; width: 100%; max-width: 900px;
+  color: var(--text); overflow-x: auto; }
+.s5-code .kw { color: var(--purple); }
+.s5-code .fn { color: var(--blue-bright); }
+.s5-code .str { color: var(--green); }
+.s5-code .cm { color: var(--text-dim); }
+
+/* Slide 6 - CTA */
+.s6-links { display: flex; gap: 20px; margin-top: 30px; }
+.s6-btn { padding: 14px 36px; border-radius: 8px; font-size: 16px; font-weight: 600;
+  text-decoration: none; transition: 0.2s; cursor: pointer; }
+.s6-btn.primary { background: var(--gold); color: #0a0e1a; }
+.s6-btn.primary:hover { background: #f0d670; }
+.s6-btn.secondary { border: 1px solid rgba(255,255,255,0.2); color: var(--text); }
+.s6-btn.secondary:hover { border-color: var(--gold); color: var(--gold); }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+
+<!-- Slide 1: Hero -->
+<div class="slide active" data-slide="0">
+  <div class="s1-bg">
+    <div class="s1-stars" id="stars"></div>
+    <div class="s1-cloud"></div>
+  </div>
+  <div class="s1-content">
+    <div class="s1-title">天 枢</div>
+    <div class="s1-sub">T I A N S H U  ·  北斗七星第一星  ·  主司枢纽与导向</div>
+    <div class="s1-line"></div>
+    <div style="font-size:18px;color:var(--text);max-width:700px;margin:0 auto;line-height:1.8;">
+      中国本土自主通用 AI Agent 框架<br>
+      <span class="dim">三爻架构 · 贝叶斯融合 · 决策标准引擎 · 多 Agent 编排</span>
+    </div>
+    <div class="s1-tags">
+      <span class="tag">82 Tests</span>
+      <span class="tag">24 工具</span>
+      <span class="tag">10 模型</span>
+      <span class="tag">16 Skills</span>
+      <span class="tag">0.2.0</span>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 2: Architecture -->
+<div class="slide" data-slide="1">
+  <h2 class="gold" style="text-align:center">三爻架构 · 三道不可绕过的闸门</h2>
+  <div class="s2-grid">
+    <div class="s2-card tian">
+      <div class="s2-emoji">☰</div>
+      <div class="s2-name" style="color:#ef4444">天 · Governance</div>
+      <div class="s2-en">治理层</div>
+      <div class="s2-desc">规则引擎 · 冲突仲裁<br>跨时间尺度信息协调<br>OVERRIDE 否决权限<br>策略引擎 + 审计六问</div>
+    </div>
+    <div class="s2-card ren">
+      <div class="s2-emoji">☷</div>
+      <div class="s2-name" style="color:#8b5cf6">人 · Decision</div>
+      <div class="s2-en">决策层</div>
+      <div class="s2-desc">意图理解 · 优先级排序<br>多 Agent 调度编排<br>Orchestrator 动态拓扑<br>贝叶斯融合 + 六标准决策</div>
+    </div>
+    <div class="s2-card di">
+      <div class="s2-emoji">☳</div>
+      <div class="s2-name" style="color:#06b6d4">地 · Execution</div>
+      <div class="s2-en">执行层</div>
+      <div class="s2-desc">传感器→数据流<br>执行器→命令流<br>24 工具 · 4 Provider<br>AgentScheduler 时间尺度</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 3: Capabilities -->
+<div class="slide" data-slide="2">
+  <h2 class="gold" style="text-align:center">核心能力矩阵</h2>
+  <div class="s3-grid">
+    <div class="s3-item"><div class="s3-icon">🛡️</div><div class="s3-name">三层闸门</div><div class="s3-desc">消息验证→策略→风险评估→执行→审计</div></div>
+    <div class="s3-item"><div class="s3-icon">🔮</div><div class="s3-name">四层世界模型</div><div class="s3-desc">不可观·可观·可测·可控，12 策略组合</div></div>
+    <div class="s3-item"><div class="s3-icon">📊</div><div class="s3-name">贝叶斯融合</div><div class="s3-desc">Q·Δt + R 逆方差加权，精度高于单源</div></div>
+    <div class="s3-item"><div class="s3-icon">⚖️</div><div class="s3-name">决策标准引擎</div><div class="s3-desc">六标准 × 场景利害自适应选择</div></div>
+    <div class="s3-item"><div class="s3-icon">⏱️</div><div class="s3-name">时间异质性</div><div class="s3-desc">Agent 按 tick_ms 独立运行，PUSH/PULL</div></div>
+    <div class="s3-item"><div class="s3-icon">🎯</div><div class="s3-name">Orchestrator</div><div class="s3-desc">动态创建/调度/销毁子 Agent，并行编排</div></div>
+    <div class="s3-item"><div class="s3-icon">🧠</div><div class="s3-name">/learn 自进化</div><div class="s3-desc">LLM 生成 SKILL.md，保存即用</div></div>
+    <div class="s3-item"><div class="s3-icon">📝</div><div class="s3-name">审计六问</div><div class="s3-desc">谁·信息·方案·约束·结果·可复现</div></div>
+    <div class="s3-item"><div class="s3-icon">🗜️</div><div class="s3-name">上下文压缩</div><div class="s3-desc">L1/L2/L3 分级，审计可回溯</div></div>
+    <div class="s3-item"><div class="s3-icon">🔗</div><div class="s3-name">项目记忆隔离</div><div class="s3-desc">每个项目独立 MEMORY.md，自动加载</div></div>
+    <div class="s3-item"><div class="s3-icon">🌐</div><div class="s3-name">多入口</div><div class="s3-desc">CLI · Server · WebSocket · REST API</div></div>
+    <div class="s3-item"><div class="s3-icon">🇨🇳</div><div class="s3-name">模型自主</div><div class="s3-desc">DeepSeek·豆包·智谱·Moonshot 全支持</div></div>
+  </div>
+</div>
+
+<!-- Slide 4: Stats & Status -->
+<div class="slide" data-slide="3">
+  <h2 class="gold" style="text-align:center">部署状态</h2>
+  <div class="s4-stats">
+    <div class="s4-stat"><div class="s4-num">82</div><div class="s4-label">Tests Passed</div></div>
+    <div class="s4-stat"><div class="s4-num">24</div><div class="s4-label">Tools</div></div>
+    <div class="s4-stat"><div class="s4-num">10</div><div class="s4-label">Models</div></div>
+    <div class="s4-stat"><div class="s4-num">16</div><div class="s4-label">Skills</div></div>
+  </div>
+  <div class="s4-status">
+    <div class="s4-row"><span class="label">版本</span><span class="value">v0.2.0</span></div>
+    <div class="s4-row"><span class="label">环境</span><span class="value">腾讯云 Ubuntu · 175.27.157.139:8720</span></div>
+    <div class="s4-row"><span class="label">服务器状态</span><span class="value"><span class="s4-dot"></span>运行中</span></div>
+    <div class="s4-row"><span class="label">入口</span><span class="value mono" style="font-size:13px">tianshu-cli | tianshu-server | tianshu</span></div>
+    <div class="s4-row"><span class="label">GitHub</span><span class="value mono" style="font-size:13px">github.com/yonghangyuan/tianshu</span></div>
+    <div class="s4-row"><span class="label">依赖</span><span class="value mono" style="font-size:12px">httpx · pyyaml · aiosqlite · rich · fastapi</span></div>
+    <div class="s4-row"><span class="label">语言</span><span class="value">Python ≥ 3.11</span></div>
+  </div>
+</div>
+
+<!-- Slide 5: Code -->
+<div class="slide" data-slide="4">
+  <h2 class="gold" style="text-align:center">一行命令开始</h2>
+  <div class="s5-code mono">
+<span class="cm"># 安装</span>
+<span class="kw">pip install</span> tianshu
+
+<span class="cm"># 配置 API Key</span>
+tianshu-cli --setup
+
+<span class="cm"># 开始对话</span>
+tianshu-cli
+
+<span class="cm"># 多 Agent 编排</span>
+/orchestrate 搜索 Rust 异步 runtime 对比，分析并生成报告
+
+<span class="cm"># 学习新技能</span>
+/learn 把刚才搜索论文的操作变成技能
+  </div>
+</div>
+
+<!-- Slide 6: CTA -->
+<div class="slide" data-slide="5">
+  <div style="text-align:center">
+    <h1 style="font-size:72px"><span class="gold">天枢</span> · 枢纽定乾坤</h1>
+    <p style="color:var(--text-dim);font-size:20px;margin-top:16px;line-height:1.8">
+      大模型本身不是最终生产力<br>
+      大模型与行业知识、组织流程、数据和基础设施结合后，才是生产力
+    </p>
+    <div class="s6-links" style="justify-content:center">
+      <a class="s6-btn primary" href="http://175.27.157.139:8720/chat" target="_blank">在线体验</a>
+      <a class="s6-btn secondary" href="https://github.com/yonghangyuan/tianshu" target="_blank">GitHub</a>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="nav">
+  <button onclick="prev()">←</button>
+  <div class="dots" id="dots"></div>
+  <button onclick="next()">→</button>
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const dotsEl = document.getElementById('dots');
+let current = 0;
+
+// Generate dots
+slides.forEach((_, i) => {
+  const d = document.createElement('span');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.onclick = () => go(i);
+  dotsEl.appendChild(d);
+});
+
+function go(i) {
+  slides[current].classList.remove('active');
+  dotsEl.children[current].classList.remove('active');
+  current = (i + slides.length) % slides.length;
+  slides[current].classList.add('active');
+  dotsEl.children[current].classList.add('active');
+}
+function next() { go(current + 1); }
+function prev() { go(current - 1); }
+
+// Stars
+const starContainer = document.getElementById('stars');
+for (let i = 0; i < 80; i++) {
+  const s = document.createElement('div');
+  s.className = 'star';
+  s.style.left = Math.random() * 100 + '%';
+  s.style.top = Math.random() * 100 + '%';
+  s.style.animationDelay = Math.random() * 3 + 's';
+  s.style.width = (1 + Math.random() * 2) + 'px';
+  s.style.height = s.style.width;
+  starContainer.appendChild(s);
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next();
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prev();
+});
+</script>
+</body>
+</html>
