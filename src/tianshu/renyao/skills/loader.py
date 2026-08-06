@@ -128,6 +128,7 @@ class SkillLoader:
         from . import paper_radar, trend_track, code_assist
         from . import web_search, translate, schedule, shell, image_gen
         from . import file_ops, browser, intel
+        from . import vision, map_tools
 
         builtins: list[BaseSkill] = [
             paper_radar.PaperRadarSkill(),
@@ -141,6 +142,8 @@ class SkillLoader:
             file_ops.FileOpsSkill(),
             browser.BrowserSkill(),
             intel.IntelSkill(),
+            vision.VisionSkill(),
+            map_tools.MapToolsSkill(),
         ]
 
         for skill in builtins:
