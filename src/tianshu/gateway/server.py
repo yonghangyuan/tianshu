@@ -207,7 +207,9 @@ async def run_stream(req: RunRequest):
 
 @app.get("/")
 async def dashboard(request: Request):
-    """首页 —— 直接进入群聊（像 DeepSeek 一样开门即用）。"""
+    """首页 —— 需要登录，登录后直接进入群聊。"""
+    if not _check_auth(request):
+        return RedirectResponse("/login")
     return RedirectResponse("/chat")
 
 @app.get("/welcome")
@@ -354,9 +356,9 @@ async def login(req: LoginReq):
     return resp
 
 def _check_auth(request: Request) -> bool:
-    """检查请求是否已登录。"""
+    """检查请求是否已登录。未配置密码时拒绝所有访问。"""
     if not LOGIN_PASSWORD:
-        return True
+        return False  # 必须配密码，不放行
     token = request.cookies.get("tianshu_token", "")
     if token in _login_tokens:
         return True
