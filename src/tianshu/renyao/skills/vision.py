@@ -1,6 +1,6 @@
 """Vision Skill — 多模态图像分析。
 
-支持调用 GLM-4V / Qwen-VL 等多模态模型分析图像。
+支持调用 GLM-5V / Qwen-VL 等多模态模型分析图像。
 用于地图识别、卫星图解读、场景理解等。
 """
 
@@ -25,7 +25,7 @@ class VisionSkill(BaseSkill):
             SkillTool(
                 name="vision",
                 description=(
-                    "Analyze an image using a multimodal vision model (GLM-4V).\n"
+                    "Analyze an image using a multimodal vision model (GLM-5V).\n"
                     "Use for: reading maps, analyzing satellite imagery, understanding diagrams, OCR.\n"
                     "Do NOT use for: text-only questions (use web_search instead)."
                 ),
@@ -49,7 +49,7 @@ class VisionSkill(BaseSkill):
         ]
 
     async def _analyze(self, image: str, prompt: str, **kwargs) -> str:
-        """调用 GLM-4V 分析图像。"""
+        """调用 GLM-5V 分析图像。"""
         import os
 
         # 获取图像 base64
@@ -64,7 +64,7 @@ class VisionSkill(BaseSkill):
         else:
             return f"❌ 图像文件不存在: {image}"
 
-        # 调用 GLM-4V (智谱)
+        # 调用 GLM-5V (智谱)
         api_key = os.environ.get("ZHIPU_API_KEY", "")
         if not api_key:
             # 尝试从配置文件加载
@@ -86,7 +86,7 @@ class VisionSkill(BaseSkill):
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "glm-4v-plus",
+                    "model": "glm-5v-turbo",
                     "messages": [
                         {
                             "role": "user",
@@ -103,7 +103,7 @@ class VisionSkill(BaseSkill):
                 },
             )
             if resp.status_code != 200:
-                return f"❌ GLM-4V 调用失败: HTTP {resp.status_code} — {resp.text[:200]}"
+                return f"❌ GLM-5V 调用失败: HTTP {resp.status_code} — {resp.text[:200]}"
 
             data = resp.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
