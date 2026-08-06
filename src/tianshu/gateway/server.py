@@ -212,6 +212,27 @@ async def dashboard(request: Request):
         return RedirectResponse("/login")
     return RedirectResponse("/chat")
 
+@app.get("/map/route")
+async def map_route_api(from_lat: float, from_lng: float, to_lat: float, to_lng: float):
+    """地图路径规划 API。"""
+    import math
+    R = 6371000
+    dlat = math.radians(to_lat - from_lat)
+    dlng = math.radians(to_lng - from_lng)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(from_lat))*math.cos(math.radians(to_lat))*math.sin(dlng/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    dist = R * c
+    y = math.sin(dlng) * math.cos(math.radians(to_lat))
+    x = math.cos(math.radians(from_lat))*math.sin(math.radians(to_lat)) - math.sin(math.radians(from_lat))*math.cos(math.radians(to_lat))*math.cos(dlng)
+    bearing = (math.degrees(math.atan2(y, x)) + 360) % 360
+    return {"distance_m": round(dist, 1), "bearing": round(bearing, 1), "points": [[from_lat, from_lng], [to_lat, to_lng]]}
+
+@app.get("/map")
+async def map_page():
+    """地图可视化页面。"""
+    html = Path(__file__).parent / "map.html"
+    return HTMLResponse(html.read_text(encoding="utf-8"))
+
 @app.get("/welcome")
 async def welcome():
     """导航入口 —— 显示已挂载 Agent 和入口链接。"""
