@@ -206,8 +206,13 @@ async def run_stream(req: RunRequest):
 
 
 @app.get("/")
-async def dashboard():
-    """首页 —— 导航入口。"""
+async def dashboard(request: Request):
+    """首页 —— 直接进入群聊（像 DeepSeek 一样开门即用）。"""
+    return RedirectResponse("/chat")
+
+@app.get("/welcome")
+async def welcome():
+    """导航入口 —— 显示已挂载 Agent 和入口链接。"""
     rows = []
     for name, cfg in _chat_agents.items():
         sp = cfg.get("system_prompt", "")[:60]
@@ -243,10 +248,6 @@ th{{color:#64748b}}
 <table>{agent_list if agent_list else '<tr><td colspan=3 style=color:#475569>暂无——用 curl POST /chat/agents 添加</td></tr>'}</table>
 </div>
 </div></body></html>""")
-
-@app.get("/dashboard")
-async def old_dashboard():
-    """旧仪表盘（保留）。"""
     if _core is None:
         return HTMLResponse("<h1>Agent not ready</h1>")
     return HTMLResponse(f"""<!DOCTYPE html>
