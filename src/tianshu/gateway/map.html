@@ -43,10 +43,35 @@ body { font-family: -apple-system, sans-serif; background: #0a0e27; height: 100v
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const map = L.map('map').setView([39.9042, 116.4074], 14);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap',
-  maxZoom: 19,
-}).addTo(map);
+// 多层瓷砖源——中国可用
+const tiles = {
+  // 高德卫星图 (无需 Key 的低清版)
+  'amap_img': L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', {
+    subdomains: '1234', attribution: '© 高德地图', maxZoom: 18,
+  }),
+  // CartoDB Voyager (国际可用)
+  'cartodb': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', attribution: '© CartoDB', maxZoom: 19,
+  }),
+  // OpenStreetMap 热力式 (备用)
+  'osm_hot': L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+    subdomains: 'ab', attribution: '© OSM', maxZoom: 19,
+  }),
+  // ESRI 卫星图 (备用)
+  'esri_sat': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© ESRI', maxZoom: 17,
+  }),
+};
+// 默认用 CartoDB (最广兼容), 失败则换 ESRI
+const defaultTile = tiles['cartodb'];
+defaultTile.addTo(map);
+
+// 右下角图层切换
+const layerControl = L.control.layers(
+  { '默认 (CartoDB)': defaultTile },
+  { '高德卫星图': tiles['amap_img'], 'ESRI 卫星图': tiles['esri_sat'], 'OSM 热力': tiles['osm_hot'] },
+  { position: 'bottomright' }
+).addTo(map);
 
 let markers = [];
 let polyline = null;
