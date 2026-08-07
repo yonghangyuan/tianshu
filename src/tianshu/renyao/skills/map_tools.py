@@ -70,6 +70,26 @@ class MapToolsSkill(BaseSkill):
                 permission_level=0,
             ),
             SkillTool(
+                name="geocode",
+                description=(
+                    "Convert a place name, address, or landmark to geographic coordinates (latitude/longitude).\n"
+                    "Use for: finding coordinates of cities, buildings, military bases, ports, etc.\n"
+                    "Returns: lat, lng, display_name, and confidence."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "place": {
+                            "type": "string",
+                            "description": "Place name or address. E.g. 'Beijing', 'Taipei 101', '南海某岛礁'",
+                        },
+                    },
+                    "required": ["place"],
+                },
+                handler=self._geocode,
+                permission_level=0,
+            ),
+            SkillTool(
                 name="map_route",
                 description=(
                     "Calculate a route between two points. Uses A* on road network.\n"
@@ -190,6 +210,43 @@ class MapToolsSkill(BaseSkill):
 
         except Exception as e:
             return f"❌ SenseNova 调用失败: {e}"
+
+    # ── Geocoding ───────────────────────────────────────────────
+
+    async def _geocode(self, place: str, **kwargs) -> str:
+        """地名→坐标。"""
+        import urllib.parse
+        try:
+            async with httpx.AsyncClient(timeout=10) as cl:
+                resp = await cl.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": place, "format": "json", "limit": 5},
+                    headers={"User-Agent": "Tianshu/0.2.0"},
+                )
+                if resp.status_code != 200:
+                    return f"❌ Geocoding 失败: HTTP {resp.status_code}"
+                data = resp.json()
+                if not data:
+                    return f"❌ 未找到: {place}"
+
+                lines = [f"📍 {place}"]
+                for i, r in enumerate(data[:5]):
+                    lines.append(
+                        f"  [{i+1}] {r.get('display_name','?')[:100]}\n"
+                        f"      坐标: ({r['lat']}, {r['lon']}) "
+                        f"类型: {r.get('type','?')} "
+                        f"重要性: {r.get('importance',0):.2f}"
+                    )
+                return "\n".join(lines)
+        except Exception as e:
+            # Nominatim 可能被墙, 降级到基础字符串匹配
+            return (
+                f"⚠️ 在线 Geocoding 不可用: {e}\n"
+                f"请手动提供坐标。已知参考点:\n"
+                f"  北京: 39.9042, 116.4074  上海: 31.2304, 121.4737\n"
+                f"  广州: 23.1291, 113.2644  深圳: 22.5431, 114.0579\n"
+                f"  成都: 30.5728, 104.0668  武汉: 30.5928, 114.3055"
+            )
 
     # ── GeoJSON 解析 ──────────────────────────────────────────────
 

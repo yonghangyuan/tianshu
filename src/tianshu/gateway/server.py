@@ -227,11 +227,29 @@ async def map_route_api(from_lat: float, from_lng: float, to_lat: float, to_lng:
     bearing = (math.degrees(math.atan2(y, x)) + 360) % 360
     return {"distance_m": round(dist, 1), "bearing": round(bearing, 1), "points": [[from_lat, from_lng], [to_lat, to_lng]]}
 
+@app.post("/map/plot")
+async def map_plot(request: Request):
+    """接收情报标注点并返回地图 URL。"""
+    body = await request.json()
+    points = body.get("points", [])
+    if not points:
+        raise HTTPException(400, "points required")
+    import urllib.parse
+    encoded = urllib.parse.quote(json.dumps(points, ensure_ascii=False))
+    return {"url": f"/map?points={encoded}", "count": len(points)}
+
 @app.get("/map")
-async def map_page():
-    """地图可视化页面。"""
-    html = Path(__file__).parent / "map.html"
-    return HTMLResponse(html.read_text(encoding="utf-8"))
+async def map_page(request: Request):
+    """地图可视化页面——支持 ?points=JSON 参数预加载标注。"""
+    html = (Path(__file__).parent / "map.html").read_text(encoding="utf-8")
+    # 注入预加载数据
+    points_param = request.query_params.get("points", "")
+    if points_param:
+        import urllib.parse
+        points_json = urllib.parse.unquote(points_param)
+        injection = f"<script>window._PRESET_POINTS = {points_json};</script>"
+        html = html.replace("</head>", f"{injection}\n</head>")
+    return HTMLResponse(html)
 
 @app.get("/welcome")
 async def welcome():

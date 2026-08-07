@@ -127,6 +127,50 @@ function locate() {
 }
 
 plan(); // Initial render
+
+// ── 情报标注加载 ──
+function loadPoints(points) {
+  if (!points || !points.length) return;
+  // 清除现有标记
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+  // 添加情报标注点
+  const bounds = [];
+  points.forEach((p, i) => {
+    if (!p.lat || !p.lng) return;
+    const icon = p.icon || (p.category === 'military' ? '🔴' : p.category === 'port' ? '⚓' : '📍');
+    const m = L.marker([p.lat, p.lng], {
+      icon: L.divIcon({
+        html: icon,
+        className: 'emoji-marker',
+        iconSize: [30, 30],
+        popupAnchor: [0, -15],
+      }),
+    }).addTo(map);
+    m.bindPopup(`<b>${p.name || 'Point '+(i+1)}</b><br>${p.desc || ''}`);
+    if (p.source) m.bindPopup(m.getPopup().getContent() + `<br><small style=color:#64748b>来源: ${p.source}</small>`);
+    markers.push(m);
+    bounds.push([p.lat, p.lng]);
+  });
+  if (bounds.length > 1) {
+    map.fitBounds(bounds, { padding: [50, 50] });
+  } else if (bounds.length === 1) {
+    map.setView(bounds[0], 13);
+  }
+}
+
+// 加载预设情报点 (来自 /map?points=...)
+if (window._PRESET_POINTS) {
+  loadPoints(window._PRESET_POINTS);
+}
+
+// URL hash 中的 GeoJSON
+if (location.hash && location.hash.startsWith('#points=')) {
+  try {
+    const pts = JSON.parse(decodeURIComponent(location.hash.slice(8)));
+    loadPoints(pts);
+  } catch(e) {}
+}
 </script>
 </body>
 </html>
