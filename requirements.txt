@@ -7,3 +7,6 @@ rich>=13.0
 fastapi>=0.100
 uvicorn>=0.20
 python-multipart>=0.0.6
+
+# 可选依赖
+# mcp>=2.0  # MCP 协议客户端: pip install 'tianshu[mcp]'

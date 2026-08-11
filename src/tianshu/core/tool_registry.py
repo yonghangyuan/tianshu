@@ -123,6 +123,22 @@ class ToolRegistry:
             self._by_skill[tool.skill_name] = []
         self._by_skill[tool.skill_name].append(tool.name)
 
+    def unregister_prefix(self, prefix: str) -> int:
+        """删除所有 name 以 prefix 开头的工具。
+
+        用于 MCP reload 时清理旧工具再重新注册。
+        返回删除的工具数量。
+        """
+        to_remove = [n for n in self._tools if n.startswith(prefix)]
+        for name in to_remove:
+            tool = self._tools.pop(name)
+            # 同时清理 _by_skill
+            if tool.skill_name in self._by_skill:
+                self._by_skill[tool.skill_name] = [
+                    n for n in self._by_skill[tool.skill_name] if n != name
+                ]
+        return len(to_remove)
+
     def scan_skills(self, loader) -> int:
         """从 SkillLoader 扫描所有 Skill，自动注册工具。"""
         count = 0

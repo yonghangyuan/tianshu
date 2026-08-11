@@ -26,7 +26,7 @@ src/tianshu/
 └── sdk/        统一数据模型
 ```
 
-65 文件 · ~12K 行 · 53 测试 · 4 核心依赖(httpx/pyyaml/aiosqlite/rich)
+~80 文件 · ~16.7K 行 · 82 测试 · 4 核心依赖(httpx/pyyaml/aiosqlite/rich)
 
 ---
 
@@ -54,7 +54,7 @@ src/tianshu/
 - 25 工具·12 Skills·4 Provider·10 模型
 - Token 预算 500K·重复调用检测·错误分类
 - PolicyEngine: 6条声明式策略·工具执行前拦截
-- 记忆: 5功能(prefetch/digest/decay/compress/boost)
+- 记忆: 5功能(prefetch/digest/decay/compress/boost) + 自动画像 + FTS5全文检索，对标 Honcho/Mem0
 - Planner: Plan Mode 下 JSON 计划→逐步执行
 - 登录系统: 代码已写·服务器未部署
 - Android APP: WebView骨架·登录页·未完成
@@ -63,28 +63,22 @@ src/tianshu/
 
 ## 五、待完成
 
-**P0（本周）** ✅ 已完成 2026-08-04
-- [x] pip 包规范：__version__ 统一 0.2.0，requirements.txt 同步
-- [x] 模块导出：6 个 __init__.py 补齐 __all__
-- [x] 配置热加载：CLI /reload + Server POST /admin/reload
-- [x] 错误友好化：API/网络/鉴权/限流 4 类中文提示
-- [x] CI 完善：pip install -e .[all] + pytest --tb=short
-
 **剩余 P0**
-- [ ] Android APP 跑通(WebView加载聊天页)
-- [ ] 服务器部署登录鉴权
+- [ ] Android APP 跑通(WebView加载聊天页) — 原生登录页已完成，待跑通完整链路
 - [ ] E2E 集成测试(至少1条: 搜索→浏览→总结)
 
 **P1 (下周)**
-- [ ] 星群多Agent编排(多实例同群协作)
+- [ ] 星群 Agent 间直接通信协议(辩论/投票) — 编排器已完成，缺 peer-to-peer
 - [ ] 上下文语义压缩(辅助模型总结·非简单截断)
+- [ ] MCP 协议支持
 
 **P2 (后续)**
 - [ ] 飞书 Bot 跑通
-- [ ] pip 包发布
+- [ ] pip 包发布（包名 `tianshu` 已被占，需改名如 `tianshu-ai`）
 - [ ] Mac/Linux 兼容
 - [ ] Plan Mode 空错误修复
 - [ ] RAG 私有知识库
+- [ ] Playwright 完整集成（截图/点击/填表）
 
 ---
 

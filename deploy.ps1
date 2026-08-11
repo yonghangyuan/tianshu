@@ -16,7 +16,7 @@ $files = @(
     "core/policy_engine.py", "core/planner.py", "core/router.py",
     "gateway/server.py", "gateway/cli.py", "gateway/chat.html",
     "gateway/delivery_ledger.py",
-    "renyao/orchestrator.py",
+    "renyao/orchestrator.py", "renyao/mcp_client.py",
     "renyao/skills/learn.py", "renyao/skills/manifest.py",
     "renyao/skills/web_search.py",
     "memory/service.py", "memory/provider.py",
@@ -36,6 +36,7 @@ foreach ($f in $files) {
 Write-Host "[2/4] 上传配置..." -ForegroundColor Yellow
 scp config/soul.md ${SERVER}:~/tianshu/config/ 2>$null
 scp config/providers.yaml ${SERVER}:~/tianshu/config/ 2>$null
+scp config/mcp.yaml ${SERVER}:~/tianshu/config/ 2>$null
 scp pyproject.toml ${SERVER}:~/tianshu/ 2>$null
 
 # 3. 重启服务

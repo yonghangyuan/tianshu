@@ -277,3 +277,8 @@ def _register_builtins(reg: CommandRegistry) -> None:
                   description="配置管理 (/config show)")
     async def _config(ctx: CommandContext) -> None:
         ctx.print("[dim]配置管理（待实现）[/dim]")
+
+    @reg.register("mcp", aliases=["/mcp"], category="config",
+                  description="MCP 服务器管理 (/mcp servers|tools|reload|connect|disconnect)")
+    async def _mcp_cmd(ctx: CommandContext) -> None:
+        ctx.print("[dim]MCP 管理（由主循环处理）[/dim]")

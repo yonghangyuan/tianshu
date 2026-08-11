@@ -729,6 +729,17 @@ def _main_sync() -> None:
             _rich_console.print("\n[dim]以上为计划，未执行。使用 /orchestrate 执行。[/dim]")
             continue
 
+        # ── MCP 命令 ──
+        elif user_input in ("mcp", "/mcp"):
+            _show_mcp_status(core)
+            continue
+        elif user_input.startswith("mcp ") or user_input.startswith("/mcp "):
+            parts = user_input.split(maxsplit=2)
+            sub = parts[1] if len(parts) > 1 else ""
+            arg = parts[2] if len(parts) > 2 else ""
+            _handle_mcp_command(sub, arg, core)
+            continue
+
         # ── @file 文件引用解析 ──
         resolved_input = _resolve_at_refs(user_input)
 
@@ -967,6 +978,129 @@ def _show_tools(core) -> None:
     _rich_console.print()
     _rich_console.print(reg.stats())
     _rich_console.print()
+
+
+# ── MCP 命令处理器 ─────────────────────────────────────────────────
+
+
+def _show_mcp_status(core) -> None:
+    """显示 MCP server 状态和工具列表。"""
+    _rich_console.print()
+    if core._mcp is None:
+        _rich_console.print("[dim]MCP 未配置。请在 config/mcp.yaml 中添加 server 后 /reload[/dim]")
+        _rich_console.print()
+        return
+
+    servers = core._mcp.list_servers()
+    if not servers:
+        _rich_console.print("[dim]没有配置 MCP server。[/dim]")
+        _rich_console.print()
+        return
+
+    from rich.table import Table as _Table
+    t = _Table(title="MCP Servers", box=None)
+    t.add_column("Server", style="cyan")
+    t.add_column("Transport", style="dim")
+    t.add_column("状态")
+    t.add_column("工具数", justify="right")
+
+    for s in servers:
+        status = "[green]● 已连接[/green]" if s["connected"] else "[red]○ 未连接[/red]"
+        t.add_row(s["name"], s["transport"], status, str(s["tools"]))
+
+    _rich_console.print(t)
+
+    # 列出工具
+    tools = core._mcp.list_tools()
+    if tools:
+        _rich_console.print()
+        _rich_console.print("[bold]MCP 工具:[/bold]")
+        for t in tools:
+            _rich_console.print(
+                f"  [cyan]{t['name']}[/cyan] "
+                f"← [dim]{t['server']}/{t['original_name']}[/dim]"
+            )
+            if t.get("description"):
+                _rich_console.print(f"    [dim]{t['description'][:100]}[/dim]")
+    _rich_console.print()
+
+
+def _handle_mcp_command(sub: str, arg: str, core) -> None:
+    """处理 /mcp <sub> [arg] 命令。"""
+    if core._mcp is None:
+        _rich_console.print("\n[dim]MCP 未配置。[/dim]\n")
+        return
+
+    if sub in ("servers", "s", "list"):
+        _show_mcp_status(core)
+
+    elif sub in ("tools", "t"):
+        tools = core._mcp.list_tools()
+        _rich_console.print()
+        if not tools:
+            _rich_console.print("[dim]没有注册的 MCP 工具[/dim]")
+        else:
+            for t in tools:
+                _rich_console.print(
+                    f"  [cyan]{t['name']}[/cyan] "
+                    f"← [dim]{t['server']}/{t['original_name']}[/dim]"
+                )
+        _rich_console.print()
+
+    elif sub in ("reload", "r"):
+        from tianshu.core.config import load_mcp_config
+        import asyncio as _asyncio
+
+        async def _mcp_reload():
+            if core._mcp:
+                await core._mcp.disconnect_all()
+            config = load_mcp_config("config/mcp.yaml")
+            if config.get("servers"):
+                await core._mcp.connect_all(
+                    config["servers"], core._tool_registry
+                )
+            return core._mcp.list_servers() if core._mcp else []
+
+        try:
+            servers = _asyncio.run(_mcp_reload())
+            connected = sum(1 for s in servers if s.get("connected"))
+            _rich_console.print(
+                f"\n  ✅ MCP 重载完成: {len(servers)} server, "
+                f"{connected} 已连接\n"
+            )
+        except Exception as e:
+            _rich_console.print(f"\n  [red]MCP 重载失败: {e}[/red]\n")
+
+    elif sub in ("connect", "c") and arg:
+        import asyncio as _asyncio
+        config = core._mcp._server_configs.get(arg)
+        if not config:
+            _rich_console.print(f"\n  [red]未找到 MCP server: {arg}[/red]\n")
+            return
+        try:
+            _asyncio.run(core._mcp.connect_server(arg, config))
+            _rich_console.print(f"\n  ✅ 已连接: {arg}\n")
+        except Exception as e:
+            _rich_console.print(f"\n  [red]连接失败 [{arg}]: {e}[/red]\n")
+
+    elif sub in ("disconnect", "d") and arg:
+        import asyncio as _asyncio
+        _asyncio.run(core._mcp.disconnect_server(arg))
+        _rich_console.print(f"\n  ✅ 已断开: {arg}\n")
+
+    elif sub == "health":
+        import asyncio as _asyncio
+        status = _asyncio.run(core._mcp.health_check())
+        _rich_console.print()
+        for name, ok in status.items():
+            icon = "[green]●[/green]" if ok else "[red]○[/red]"
+            _rich_console.print(f"  {icon} {name}")
+        _rich_console.print()
+
+    else:
+        _rich_console.print(
+            "\n[dim]用法: /mcp [servers|tools|reload|connect <name>|disconnect <name>|health][/dim]\n"
+        )
 
 
 def _do_reload(core, providers_yaml, routing_config, system_prompt) -> None:

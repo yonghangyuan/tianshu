@@ -101,6 +101,7 @@ class AgentCore:
         self._hooks: dict = {"pre_tool": [], "post_tool": []}  # Hook系统
         self._mode: str = "normal"       # normal / plan / auto
         self._policy_engine: Any = None  # PolicyEngine
+        self._mcp: Any = None            # McpClientManager (lazy init)
 
     # ── 初始化 ───────────────────────────────────────────────────────
 
@@ -161,6 +162,28 @@ class AgentCore:
         if _wpath.exists():
             import json as _json
             self._permission_whitelist = set(_json.loads(_wpath.read_text(encoding="utf-8")))
+
+        # ── MCP 客户端 ──
+        # 如果之前有旧连接（/reload 场景），先断开
+        if self._mcp is not None:
+            try:
+                import asyncio as _asyncio
+                _asyncio.get_event_loop().run_until_complete(
+                    self._mcp.disconnect_all()
+                )
+            except Exception:
+                pass
+
+        from .config import load_mcp_config
+        mcp_config = load_mcp_config("config/mcp.yaml")
+        if mcp_config.get("servers"):
+            from ..renyao.mcp_client import McpClientManager
+            self._mcp = McpClientManager()
+            self._mcp._registry = self._tool_registry
+            # 连接在 async 上下文中执行——setup() 是同步的，
+            # 实际连接延迟到首次 run() 调用时
+            self._mcp_pending_connect = mcp_config.get("servers", {})
+
         # 自动注入项目上下文 (类似 Claude Code 的 TIANSHU.md)
         _cwd = Path.cwd()
         _project_slug = str(_cwd).replace(":\\", "--").replace("\\", "-").replace("/", "-")
@@ -267,6 +290,17 @@ class AgentCore:
         """
         if not self._ready:
             return AgentResponse(error="AgentCore not set up. Call setup() first.")
+
+        # ── MCP 延迟连接 ──
+        if hasattr(self, '_mcp_pending_connect') and self._mcp_pending_connect:
+            try:
+                await self._mcp.connect_all(
+                    self._mcp_pending_connect, self._tool_registry
+                )
+            except Exception:
+                pass
+            finally:
+                self._mcp_pending_connect = {}
 
         t0 = time.time()
 
@@ -482,6 +516,20 @@ class AgentCore:
         if not self._ready:
             yield StreamError(message="AgentCore not set up. Call setup() first.")
             return
+
+        # ── MCP 延迟连接 ──
+        # setup() 是同步的，MCP 连接需要 async——在这里完成
+        if hasattr(self, '_mcp_pending_connect') and self._mcp_pending_connect:
+            try:
+                await self._mcp.connect_all(
+                    self._mcp_pending_connect, self._tool_registry
+                )
+            except Exception as e:
+                yield ContentDelta(
+                    text=f"\n⚠️ MCP 连接失败: {type(e).__name__}: {e}\n"
+                )
+            finally:
+                self._mcp_pending_connect = {}
 
         t0 = time.time()
 

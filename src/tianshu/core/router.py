@@ -82,9 +82,9 @@ class ModelRouter:
         name = parts[0]
         model = parts[1] if len(parts) > 1 else ""
 
-        # 如果 model 不是完整的 model_id（不含 "-"），自动补全
-        if model and "-" not in model:
-            # 查找该 provider 下匹配的 model
+        # 如果 model 不包含 provider 前缀，自动补全
+        # 修正: 之前用 "-" 判断，但 v4-pro/v4-flash 包含 "-" 被误跳过
+        if model and not model.startswith(f"{name}-"):
             model = f"{name}-{model}"
         elif not model:
             model = ""

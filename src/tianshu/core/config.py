@@ -92,6 +92,57 @@ def load_routing_config(config_path: str | Path = "config/providers.yaml") -> Ro
     return RoutingConfig(rules=rules, fallback=fallback)
 
 
+def load_mcp_config(
+    config_path: str | Path = "config/mcp.yaml",
+) -> dict[str, Any]:
+    """从 YAML 加载 MCP server 配置。
+
+    两层合并：用户级 ~/.tianshu/mcp.yaml (优先) + 项目级 config/mcp.yaml。
+    文件不存在不报错——MCP 是可选的。
+
+    Args:
+        config_path: 项目级 mcp.yaml 的路径
+
+    Returns:
+        {"servers": {name: {transport, url/command, ...}}}
+    """
+    merged: dict[str, Any] = {}
+
+    # 1. 项目级配置
+    project_path = Path(config_path)
+    if project_path.exists():
+        with open(project_path, "r", encoding="utf-8") as f:
+            project_config = yaml.safe_load(f) or {}
+        merged = project_config
+
+    # 2. 用户级配置（覆盖项目级）
+    user_path = Path.home() / ".tianshu" / "mcp.yaml"
+    if user_path.exists():
+        with open(user_path, "r", encoding="utf-8") as f:
+            user_config = yaml.safe_load(f) or {}
+        # 深层合并：servers 级别按 server name 覆盖
+        user_servers = user_config.get("servers", {})
+        if "servers" not in merged:
+            merged["servers"] = {}
+        merged["servers"].update(user_servers)
+
+    # 3. 解析 ${ENV_VAR} 占位符
+    merged = _resolve_mcp_env(merged)
+
+    return merged
+
+
+def _resolve_mcp_env(config: dict) -> dict:
+    """递归解析 MCP 配置中的 ${ENV_VAR} 占位符。"""
+    if isinstance(config, dict):
+        return {k: _resolve_mcp_env(v) for k, v in config.items()}
+    elif isinstance(config, list):
+        return [_resolve_mcp_env(item) for item in config]
+    elif isinstance(config, str):
+        return _resolve_env(config)
+    return config
+
+
 def _create_provider(
     name: str, model_id: str, api_key: str, base_url: str
 ) -> BaseProvider | None:

@@ -1,0 +1,42 @@
+# MCP Server 配置
+#
+# 天枢作为 MCP Client 连接外部 MCP Server，自动发现工具并注册。
+# 用户级配置: ~/.tianshu/mcp.yaml（优先级更高，覆盖项目级）
+# 环境变量引用: ${VAR_NAME}
+#
+# 用法:
+#   /mcp           — 查看所有 server 状态
+#   /mcp servers   — 同上
+#   /mcp tools     — 列出所有 MCP 工具
+#   /mcp reload    — 重载此配置文件
+#   /mcp connect <name>  — 连接指定 server
+#   /mcp disconnect <name> — 断开指定 server
+#   /mcp health    — 健康检查
+
+servers:
+  # === stdio 传输（本地子进程）===
+  filesystem:
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "F:/"]
+
+  # === Streamable HTTP 传输 ===
+  # 开阳 (Kaiyang) — 全球OSINT情报地理标注与态势感知
+  # 启动: python -m kaiyang.main --port 8721
+  kaiyang:
+    transport: http
+    url: http://localhost:8721/mcp
+
+  # 天枢社交媒体 — 5 个平台，统一搜索/热搜
+  # 启动: tianshu-social --port 8750
+  social:
+    transport: http
+    url: http://localhost:8750/mcp
+
+  # 天枢统一世界服务器 — 一个 Server，多种后端
+  # 启动: tianshu-world --backend sim    (纯仿真)
+  #       tianshu-world --backend modbus (工厂设备)
+  #       tianshu-world --backend voxel  (体素世界)
+  tianshu-world:
+    transport: http
+    url: http://localhost:8740/mcp

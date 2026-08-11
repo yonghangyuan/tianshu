@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <defs>
+    <radialGradient id="star" cx="30%" cy="25%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="30%" stop-color="#ffd700"/>
+      <stop offset="100%" stop-color="#ffd700" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 底板 -->
+  <rect width="160" height="160" rx="36" fill="#0a0e14"/>
+
+  <!-- 三阳爻 (乾卦) -->
+  <g fill="#ffd700" opacity="0.88">
+    <rect x="34" y="60" width="92" height="8" rx="4"/>
+    <rect x="34" y="80" width="92" height="8" rx="4"/>
+    <rect x="34" y="100" width="92" height="8" rx="4"/>
+  </g>
+
+  <!-- 天枢星：位于三爻上方偏左 -->
+  <circle cx="38" cy="46" r="28" fill="url(#star)" opacity="0.08"/>
+  <circle cx="38" cy="46" r="7" fill="#ffd700"/>
+  <circle cx="38" cy="46" r="2.5" fill="#ffffff" opacity="0.85"/>
+</svg>
