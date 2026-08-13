@@ -59,6 +59,7 @@ def _print_cmd_help() -> None:
         ("/learn", "生成新技能"),
         ("/session", "会话管理"),
         ("/memory", "记忆管理"),
+        ("/rag", "RAG 知识库"),
         ("/tools", "查看工具"),
         ("/mode, Tab", "切换 normal/auto/plan"),
         ("/cost", "Token 消耗"),
@@ -750,6 +751,17 @@ def _main_sync() -> None:
             _handle_mcp_command(sub, arg, core)
             continue
 
+        # ── RAG 命令 ──
+        elif user_input in ("rag", "/rag"):
+            _handle_rag_command("", "")
+            continue
+        elif user_input.startswith("rag ") or user_input.startswith("/rag "):
+            parts = user_input.split(maxsplit=2)
+            sub = parts[1] if len(parts) > 1 else ""
+            arg = parts[2] if len(parts) > 2 else ""
+            _handle_rag_command(sub, arg)
+            continue
+
         # ── @file 文件引用解析 ──
         resolved_input = _resolve_at_refs(user_input)
 
@@ -1110,6 +1122,58 @@ def _handle_mcp_command(sub: str, arg: str, core) -> None:
     else:
         _rich_console.print(
             "\n[dim]用法: /mcp [servers|tools|reload|connect <name>|disconnect <name>|health][/dim]\n"
+        )
+
+
+def _handle_rag_command(sub: str, arg: str) -> None:
+    """处理 /rag <sub> [arg] 命令。"""
+    from tianshu.rag.service import get_service
+    svc = get_service()
+
+    if sub in ("status", "s", ""):
+        st = asyncio.run(svc.status())
+        mode = "[yellow]离线 Mock[/yellow] (未配置 API Key)" if st["offline"] else f"API ([cyan]{st['embedder']}[/cyan])"
+        _rich_console.print(f"\n  ==== RAG 知识库 ====")
+        _rich_console.print(f"  embedding: {mode}")
+        _rich_console.print(f"  存储: [dim]{st['db']}[/dim]")
+        cols = st["collections"]
+        if not cols:
+            _rich_console.print("  [dim]暂无集合 — 用 /rag ingest <路径> 摄取文档[/dim]")
+        for c in cols:
+            _rich_console.print(f"  📚 [bold]{c['name']}[/bold]: {c['chunks']} chunks / {c['sources']} 来源")
+        _rich_console.print()
+
+    elif sub in ("search", "q") and arg:
+        results = asyncio.run(svc.search(arg))
+        _rich_console.print(f"\n  ==== RAG 检索 '[cyan]{arg}[/cyan]' ({len(results)} 条) ====")
+        if not results:
+            _rich_console.print("  [dim]未找到相关内容 — 先 /rag ingest <路径> 摄取文档[/dim]")
+        for r in results:
+            title = r.get("title") or r.get("source") or "片段"
+            src = f" [dim]{r.get('source', '')}[/dim]" if r.get("source") else ""
+            _rich_console.print(f"  #{r['rank']} [bold]{title}[/bold]{src} (score={r.get('score', 0.0):.3f})")
+            _rich_console.print(f"    [dim]{r['text'][:200]}[/dim]")
+        _rich_console.print()
+
+    elif sub in ("ingest", "i") and arg:
+        try:
+            r = asyncio.run(svc.ingest_path(arg))
+        except FileNotFoundError as e:
+            _rich_console.print(f"\n  [red]{e}[/red]\n")
+            return
+        _rich_console.print(f"\n  ✅ 摄取: {r['files']} 文件, {r['chunks']} chunks, 新增 {r['added']}")
+        if r["skipped"]:
+            shown = ", ".join(str(s) for s in r["skipped"][:3])
+            _rich_console.print(f"  [dim]跳过 {len(r['skipped'])}: {shown}[/dim]")
+        _rich_console.print()
+
+    elif sub in ("delete", "d") and arg:
+        n = asyncio.run(svc.delete_collection(arg))
+        _rich_console.print(f"\n  ✅ 已删除集合 '[cyan]{arg}[/cyan]' ({n} chunks)\n")
+
+    else:
+        _rich_console.print(
+            "\n[dim]用法: /rag | /rag search <查询> | /rag ingest <路径> | /rag delete <集合>[/dim]\n"
         )
 
 

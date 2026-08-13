@@ -1,0 +1,91 @@
+{
+  "name": "rag",
+  "description": "私有知识库: 摄取本地文档(PDF/Markdown/代码)建混合索引，语义+关键词检索",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "rag_ingest",
+      "description": "把本地文件/目录摄取进 RAG 私有知识库，建立向量+BM25混合索引。支持 .md/.txt/.py/.json/.yaml/.csv/.html/.pdf。重复摄取自动去重。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件或目录路径"
+          },
+          "collection": {
+            "type": "string",
+            "description": "集合名，默认 default"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "rag_search",
+      "description": "在 RAG 私有知识库中混合检索（语义向量+BM25关键词，RRF融合），返回最相关片段。检索不到时考虑先 rag_ingest 摄取文档。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "检索查询"
+          },
+          "collection": {
+            "type": "string",
+            "description": "集合名，默认 default"
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "返回条数，默认 5"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "permission": 0
+    },
+    {
+      "name": "rag_status",
+      "description": "查看 RAG 知识库状态：embedding 模式、集合、chunk 数、来源数。",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "permission": 0
+    },
+    {
+      "name": "rag_delete",
+      "description": "删除一个知识库集合及其全部索引。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "要删除的集合名"
+          }
+        },
+        "required": [
+          "collection"
+        ]
+      },
+      "permission": 2
+    }
+  ],
+  "trigger_keywords": [
+    "知识库",
+    "rag",
+    "私有文档",
+    "文档检索",
+    "语义搜索",
+    "摄取文档",
+    "建索引",
+    "检索文档"
+  ],
+  "handler": "tianshu.renyao.skills.rag:RAGSkill"
+}

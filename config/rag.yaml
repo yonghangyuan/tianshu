@@ -1,0 +1,26 @@
+# 天枢 RAG 私有知识库配置
+# 未配置 embedding API Key 时自动降级为离线 Mock 模式（检索依赖关键词）。
+
+embedding:
+  # provider: mock 显式使用离线模式（零网络零 Key）
+  # 其他任意值 → OpenAI 兼容 /embeddings 端点
+  provider: zhipu
+  model: embedding-3
+  base_url: https://open.bigmodel.cn/api/paas/v4
+  api_key: ${ZHIPU_API_KEY}
+  # 离线 mock 向量维度（仅 provider: mock 时生效）
+  dims: 256
+  batch_size: 16
+
+storage:
+  # LanceDB 换 SQLite 的理由: FTS5 内置 BM25 + struct 打包 float32 向量，
+  # 零新增硬依赖，符合天枢「核心依赖 4 个」原则
+  dir: ~/.tianshu/rag
+
+chunking:
+  size: 800        # 目标 chunk 字符数
+  overlap: 120     # 滑动窗口重叠字符数
+
+search:
+  top_k: 5
+  vector_weight: 0.6   # 向量 vs BM25 的 RRF 融合权重 (0.0~1.0)

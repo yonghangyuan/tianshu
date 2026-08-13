@@ -32,7 +32,8 @@ dependencies = [
 tui = ["prompt_toolkit>=3.0"]
 browser = ["websockets>=12.0"]  # Edge CDP 渲染需要
 mcp = ["mcp>=2.0"]  # MCP 协议客户端
-all = ["prompt_toolkit>=3.0", "websockets>=12.0", "mcp>=2.0"]
+rag = ["numpy>=1.24", "pypdf>=4.0"]  # RAG: 向量检索加速 + PDF 摄取
+all = ["prompt_toolkit>=3.0", "websockets>=12.0", "mcp>=2.0", "numpy>=1.24", "pypdf>=4.0"]
 
 [project.urls]
 Homepage = "https://github.com/yonghangyuan/tianshu"

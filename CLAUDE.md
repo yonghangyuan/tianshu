@@ -22,11 +22,12 @@ src/tianshu/
 │   └── skills/ browser · web_search · file_ops · intel · shell · paper_radar ...
 ├── tianyao/    天曜 — 4 级审计 · Cron 调度
 ├── memory/     L2(MEMORY.md/USER.md) + L5(SQLite FTS5) · Prefetch · Digest · Decay · Compress
+├── rag/        RAG 知识库 — chunker · embedder(API/Mock) · HybridStore · RAGService
 ├── gateway/    CLI · TUI · Server(星群群聊) · 飞书/微信/QQ(骨架)
 └── sdk/        统一数据模型
 ```
 
-55 文件 · ~15K 行 · 95 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
+60 文件 · ~16K 行 · 133 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
 
 ---
 
@@ -50,6 +51,7 @@ src/tianshu/
 - PolicyEngine: 6条声明式策略·工具执行前拦截
 - Planner: Plan Mode 下 JSON 计划→逐步执行
 - 记忆: FTS5全文检索 + 自动画像 + Digest + Decay + Compress，对标 Honcho/Mem0
+- RAG 知识库: SQLite FTS5(BM25) + float32 向量混合检索(RRF融合)，零新增硬依赖，PDF/Markdown/代码摄取
 - MCP Client: 完整 stdio + HTTP 双 transport，支持多 server 并行
 - WorldAdapter: 统一 Modbus/Voxel/Sim 后端接口
 - 真 SSE 流式: token 级别实时输出
@@ -75,7 +77,7 @@ src/tianshu/
 **P1**
 - [ ] 星群 Agent 间直接通信协议
 - [ ] pip 包发布（需改名，`tianshu` 已被占）
-- [ ] RAG 私有知识库
+- [x] RAG 私有知识库 (08-13)
 
 **P2**
 - [ ] 飞书 Bot 跑通
@@ -101,10 +103,12 @@ src/tianshu/
 ```bash
 tianshu-cli                  # CLI
 tianshu-server --port 8720   # Server
-pytest tests/ -q             # 测试 (95 passed)
+pytest tests/ -q             # 测试 (133 passed)
 tianshu-world --backend sim  # 统一世界服务器
 tianshu-social --port 8750   # 社交媒体搜索
 ```
+
+CLI 内: `/rag ingest <路径>` 摄取文档 · `/rag search <查询>` 混合检索 · `/rag` 查看状态
 
 ---
 

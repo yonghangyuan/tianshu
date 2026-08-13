@@ -113,10 +113,11 @@
 ## 四、P2 — 智能增强（对标 OpenClaw Agent）
 
 ### P2-001 — RAG 文档知识库（区别于已有对话记忆系统）
-- **状态**: ⬜ 待办
-- **创建**: 2026-07-28 | **更新**: 2026-08-10
-- **描述**: 对话记忆系统已完整（FTS5 + Digest + Decay + Compress + Prefetch，对标 Honcho/Mem0）。RAG 是另一件事——本地**文档**向量索引（ChromaDB / LanceDB）+ 混合检索（向量 + BM25），支持 PDF/Markdown/代码文件的摄取与语义搜索。当前 memory 后端无 embedding 和向量存储
-- **预计**: 3-5 天
+- **状态**: ✅ 已完成
+- **创建**: 2026-07-28 | **完成**: 2026-08-13
+- **描述**: 对话记忆系统已完整（FTS5 + Digest + Decay + Compress + Prefetch，对标 Honcho/Mem0）。RAG 是另一件事——本地**文档**向量索引 + 混合检索（向量 + BM25），支持 PDF/Markdown/代码文件的摄取与语义搜索
+- **实现**: `src/tianshu/rag/` — chunker(Markdown 标题感知+滑动窗口) + embedder(OpenAI兼容API/离线Mock降级) + HybridStore(SQLite FTS5 BM25 + float32 向量 + RRF 融合)。**零新增硬依赖**（ChromaDB/LanceDB 方案被否，改用 SQLite 内置 FTS5 + struct 打包，符合「核心依赖 4 个」原则）。numpy 可选加速。中文 2-gram 分词处理 CJK 检索。30 测试
+- **接线**: `renyao/skills/rag` (4 工具: ingest/search/status/delete) + CLI `/rag` 命令组 + `config/rag.yaml`
 - **注意**: 对话记忆 ✅ ≠ RAG ❌，两者互补
 
 ### P2-002 — 多模态输入
@@ -239,12 +240,12 @@
 |:------:|:----:|:------:|:------:|:----:|
 | P0 | 5 | 3 | 0 | 2 |
 | P1 | 7 | 5 | 0 | 2 |
-| P2 | 6 | 2 | 1 | 3 |
+| P2 | 6 | 3 | 1 | 2 |
 | P3 | 7 | 2 | 1 | 4 |
 | Android | 1 | 0 | 1 | 0 |
-| **合计** | **26** | **12** | **3** | **11** |
+| **合计** | **26** | **13** | **3** | **10** |
 
-**完成率: 46%** (12/26)，另有 3 项进行中
+**完成率: 50%** (13/26)，另有 3 项进行中
 
 ---
 

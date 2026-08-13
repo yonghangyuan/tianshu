@@ -143,6 +143,40 @@ def _resolve_mcp_env(config: dict) -> dict:
     return config
 
 
+def load_rag_config(
+    config_path: str | Path = "config/rag.yaml",
+) -> dict[str, Any]:
+    """从 YAML 加载 RAG 知识库配置。
+
+    两层合并：用户级 ~/.tianshu/rag.yaml (优先) + 项目级 config/rag.yaml。
+    文件不存在不报错——RAG 降级为离线 Mock 模式。
+
+    Returns:
+        {embedding: {...}, storage: {...}, chunking: {...}, search: {...}}
+    """
+    merged: dict[str, Any] = {}
+
+    # 1. 项目级配置
+    project_path = Path(config_path)
+    if project_path.exists():
+        with open(project_path, "r", encoding="utf-8") as f:
+            merged = yaml.safe_load(f) or {}
+
+    # 2. 用户级配置（覆盖项目级）
+    user_path = Path.home() / ".tianshu" / "rag.yaml"
+    if user_path.exists():
+        with open(user_path, "r", encoding="utf-8") as f:
+            user_config = yaml.safe_load(f) or {}
+        for k, v in user_config.items():
+            if isinstance(v, dict) and isinstance(merged.get(k), dict):
+                merged[k].update(v)
+            else:
+                merged[k] = v
+
+    # 3. 解析 ${ENV_VAR} 占位符
+    return _resolve_mcp_env(merged)
+
+
 def _create_provider(
     name: str, model_id: str, api_key: str, base_url: str
 ) -> BaseProvider | None:

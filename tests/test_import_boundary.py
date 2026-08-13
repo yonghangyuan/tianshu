@@ -37,6 +37,7 @@ ALLOWED_HOT_IMPORTS = {
     "tianshu.tianyao.agent_scheduler",
     "tianshu.memory", "tianshu.memory.service",
     "tianshu.memory.provider",
+    "tianshu.rag", "tianshu.rag.service",
     "tianshu.core.tool_registry", "tianshu.core.policy_engine",
     "tianshu.core.planner", "tianshu.core.router",
     "tianshu.core.db", "tianshu.core.turn_machine",
@@ -150,6 +151,7 @@ class TestImportBoundary:
             "tianshu.renyao.skills.shell",
             "tianshu.renyao.skills.translate",
             "tianshu.renyao.skills.trend_track",
+            "tianshu.renyao.skills.rag",
         }
 
         for hot_file in [main_file, server_file]:
