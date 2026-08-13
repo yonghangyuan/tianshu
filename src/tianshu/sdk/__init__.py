@@ -48,7 +48,7 @@ from .trigram import (
     validate_message,
 )
 
-from .provider import BaseProvider
+from ..diyao.providers.base import BaseProvider
 
 __all__ = [
     # Provider

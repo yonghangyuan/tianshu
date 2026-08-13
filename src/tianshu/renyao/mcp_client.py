@@ -72,9 +72,10 @@ class McpClientManager:
             try:
                 count = await self.connect_server(name, cfg)
                 total += count
-            except Exception as e:
-                self._errors[name] = str(e)
-                logger.warning(f"MCP server '{name}' 连接失败: {e}")
+            except (Exception, RuntimeError) as e:
+                self._errors[name] = str(e)[:200]
+                if not isinstance(e, RuntimeError):
+                    logger.warning(f"MCP server '{name}' 连接失败: {e}")
 
         return total
 
@@ -220,8 +221,8 @@ class McpClientManager:
         if client is not None:
             try:
                 await client.__aexit__(None, None, None)
-            except Exception:
-                pass
+            except (Exception, RuntimeError, BaseException):
+                pass  # MCP SDK 在连接失败时有已知的 cancel scope bug
         self._errors.pop(name, None)
 
     # ── 工具调用 ──────────────────────────────────────────────────────

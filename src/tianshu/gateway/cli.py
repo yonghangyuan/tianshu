@@ -116,8 +116,9 @@ class StreamRenderer:
             self._tool_count += 1
             self._tool_phase = True
             args_summary = _format_tool_args(event.tool_name, event.tool_args)
+            icon = _tool_icon(event.tool_name)
             console.print(Text(
-                f"  ● {event.tool_name}({args_summary})",
+                f"  {icon} {event.tool_name}({args_summary})",
                 style="bold cyan",
             ))
             return True
@@ -220,6 +221,20 @@ def _format_tool_args(name: str, args: dict) -> str:
         return s[:80]
     except Exception:
         return str(args)[:80]
+
+
+def _tool_icon(name: str) -> str:
+    """根据工具名返回对应图标。"""
+    if "mcp_" in name:
+        return "🔌"
+    icons = {
+        "web_search": "🔍", "browse": "🌐", "sogou_weixin": "💬",
+        "read_file": "📖", "write_file": "✏️", "list_dir": "📂",
+        "shell_exec": "⚡", "search_papers": "📄", "download": "⬇️",
+        "translate": "🌍", "remember_fact": "🧠", "recall_memory": "💭",
+        "get_model_status": "🤖", "intel_search": "🔎",
+    }
+    return icons.get(name, "●")
 
 
 def _print_done(event: StreamDone, tool_count: int, t0: float,

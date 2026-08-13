@@ -1,0 +1,27 @@
+# 通用问答评测
+
+- name: "简单常识问答"
+  description: "简单问题不应调用工具"
+  input: "1+1等于几"
+  tags: [general]
+  expect:
+    max_tools: 1      # 0 也可以，但允许 memory 工具
+    output_contains: ["2"]
+    max_latency_ms: 10000
+
+- name: "自我介绍"
+  description: "Agent 应能介绍自己的身份"
+  input: "你是谁"
+  tags: [general, identity]
+  expect:
+    max_tools: 2
+    output_contains: ["天枢"]
+    max_latency_ms: 10000
+
+- name: "工具链不应过度"
+  description: "简单问候不应触发搜索"
+  input: "你好"
+  tags: [general, efficiency]
+  expect:
+    max_tools: 2
+    max_latency_ms: 10000

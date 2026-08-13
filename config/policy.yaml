@@ -54,3 +54,28 @@ policies:
       command_contains: ["curl", "wget", "Invoke-WebRequest", "iwr"]
     action: confirm
     message: "⚠️ 即将从网络下载并执行内容，确认？"
+
+# ── 决策策略 (天权决策的执行前治理闸门) ──
+decision_policies:
+  # 生产环境: 一切决策强制人工确认
+  - name: no-prod-autonomy
+    description: 生产环境决策禁止自主执行
+    domain: "prod-*"
+    action: confirm
+    message: "⚠️ 生产环境决策，需人工确认"
+
+  # 大额利害: 强制人工确认
+  - name: high-stake-confirm
+    description: 利害超过 ¥1000 的决策需人工确认
+    domain: "*"
+    max_stake: 1000
+    action: confirm
+    message: "⚠️ 利害超过 ¥1000，需人工确认"
+
+  # 不可逆决策: 一律拒绝自主执行
+  - name: irreversible-deny
+    description: 不可逆决策禁止自主执行
+    domain: "*"
+    max_reversibility: reversible
+    action: deny
+    message: "⛔ 不可逆决策禁止自主执行，必须走咨询模式"

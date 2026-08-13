@@ -57,6 +57,8 @@
 
 **MCP 服务器**: 输入 `/mcp` 查看已连接的 MCP 服务器状态和工具。
 
+**社交媒体搜索 (MCP)**: 连接到 social MCP server 时可用。`social_hot` 查热搜（微博/知乎/抖音/B站），`social_search` 关键词搜索（微博/知乎/小红书）。查热搜**优先用 MCP 工具**，比 web_search+browse 快 20 倍。
+
 **重载配置**: 输入 `/reload` 重新加载配置文件（包括 MCP server 变更）。
 
 **系统状态**: 输入 `/status` 查看系统运行状态。

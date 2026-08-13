@@ -177,7 +177,7 @@ async def skills():
 
 @app.post("/run/stream")
 async def run_stream(req: RunRequest):
-    """SSE 流式 Agent 对话。"""
+    """SSE 流式 Agent 对话——真正的 token 级别流式输出。"""
     if _core is None:
         raise HTTPException(503)
 
@@ -186,21 +186,28 @@ async def run_stream(req: RunRequest):
         _sessions[sid] = AgentContext(session_id=sid)
 
     async def generate():
-        import asyncio as _aio
-        resp = await _core.run(
+        async for event in _core.run_stream(
             AgentRequest(input=req.input, session_id=sid, model_override=req.model_override),
             ctx=_sessions[sid],
-        )
-        yield f"data: {json.dumps({'type': 'start', 'model': resp.model_used, 'decision_id': resp.decision_id}, ensure_ascii=False)}\n\n"
-        if resp.tool_calls:
-            for tc in resp.tool_calls:
-                yield f"data: {json.dumps({'type': 'tool', 'name': tc.get('name','?'), 'ok': tc.get('success',True)}, ensure_ascii=False)}\n\n"
-        if resp.content:
-            # 逐字流式发送（模拟打字机效果）
-            for char in resp.content:
-                yield f"data: {json.dumps({'type': 'text', 'content': char}, ensure_ascii=False)}\n\n"
-                await _aio.sleep(0.015)  # ~65 chars/sec
-        yield f"data: {json.dumps({'type': 'done', 'elapsed_ms': resp.elapsed_ms, 'audit_level': resp.audit_level}, ensure_ascii=False)}\n\n"
+        ):
+            from tianshu.sdk.models import (
+                ContentDelta, ReasoningDelta, ToolCallStart,
+                ToolCallResult, ToolCallConfirm, StreamError, StreamDone,
+            )
+            if isinstance(event, ContentDelta):
+                yield f"data: {json.dumps({'type': 'text', 'content': event.text}, ensure_ascii=False)}\n\n"
+            elif isinstance(event, ReasoningDelta):
+                yield f"data: {json.dumps({'type': 'reasoning', 'content': event.text}, ensure_ascii=False)}\n\n"
+            elif isinstance(event, ToolCallStart):
+                yield f"data: {json.dumps({'type': 'tool_start', 'name': event.tool_name}, ensure_ascii=False)}\n\n"
+            elif isinstance(event, ToolCallResult):
+                yield f"data: {json.dumps({'type': 'tool', 'name': event.tool_name, 'ok': event.success}, ensure_ascii=False)}\n\n"
+            elif isinstance(event, ToolCallConfirm):
+                yield f"data: {json.dumps({'type': 'confirm', 'tool': event.tool_name, 'level': event.permission_level}, ensure_ascii=False)}\n\n"
+            elif isinstance(event, StreamDone):
+                yield f"data: {json.dumps({'type': 'done', 'elapsed_ms': event.elapsed_ms, 'audit_level': getattr(event, 'audit_level', 0)}, ensure_ascii=False)}\n\n"
+            elif isinstance(event, StreamError):
+                yield f"data: {json.dumps({'type': 'error', 'message': event.message}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -247,7 +254,12 @@ async def map_page(request: Request):
     if points_param:
         import urllib.parse
         points_json = urllib.parse.unquote(points_param)
-        injection = f"<script>window._PRESET_POINTS = {points_json};</script>"
+        import json as _json
+        try:
+            safe = _json.dumps(_json.loads(points_json))
+            injection = f"<script>window._PRESET_POINTS = {safe};</script>"
+        except Exception:
+            injection = ""
         html = html.replace("</head>", f"{injection}\n</head>")
     return HTMLResponse(html)
 
@@ -387,17 +399,26 @@ async def login(req: LoginReq):
     if not req.username.strip():
         return {"ok": False, "error": "用户名不能为空"}
     if LOGIN_PASSWORD and req.password != LOGIN_PASSWORD:
-        return {"ok": False, "error": "密码错误"}
+        resp = JSONResponse({"ok": False, "error": "密码错误"})
+        resp.status_code = 401
+        return resp
     token = _secrets.token_hex(16)
     _login_tokens.add(token)
     resp = JSONResponse({"ok": True, "token": token})
     resp.set_cookie("tianshu_token", token, httponly=True)
     return resp
 
+def _check_auth_token(token: str) -> bool:
+    """检查 token 是否有效（WebSocket 用）。"""
+    if not LOGIN_PASSWORD:
+        return False
+    return bool(token) and token in _login_tokens
+
+
 def _check_auth(request: Request) -> bool:
     """检查请求是否已登录。未配置密码时拒绝所有访问。"""
     if not LOGIN_PASSWORD:
-        return False  # 必须配密码，不放行
+        return False
     token = request.cookies.get("tianshu_token", "")
     if token in _login_tokens:
         return True
@@ -533,6 +554,11 @@ async def dispatch_agent(agent_name: str, request: Request, _=Depends(require_au
 
 @app.websocket("/ws")
 async def websocket_chat(ws: WebSocket):
+    # 鉴权检查: cookie 或 query token
+    token = ws.cookies.get("tianshu_token") or ws.query_params.get("token", "")
+    if not _check_auth_token(token):
+        await ws.close(code=4001, reason="未登录")
+        return
     await ws.accept()
     _ws_clients.append(ws)
     _ws_names[ws] = "匿名"

@@ -207,32 +207,29 @@
 
 ---
 
-## 七、路线图外新增（2026-07-28 → 08-10）
+## 七、路线图外新增（2026-07-28 → 08-12）
 
 以下功能在 roadmap 编写后新增，已全部完成：
 
-| 功能 | 文件 | 完成日 |
+| 功能 | 说明 | 完成日 |
 |------|------|:------:|
-| 地图可视化 | `gateway/map.html` + `renyao/skills/map_tools.py` | 08-06 |
-| 空间智能分析 | map_analyze (SenseNova-SI-1.3) | 08-06 |
-| 路径规划 | Haversine + OSMnx 路由 | 08-06 |
-| Landing 落地页 | `landing.html` (北斗七星暗蓝金) | 08-06 |
-| 部署脚本 | `deploy.ps1` (scp → 腾讯云) | 08-06 |
-| Nginx 配置 | `nginx-yaopole.conf` (yaopole.com → :8720) | 08-06 |
-| 登录鉴权 | TIANSHU_LOGIN_PASSWORD + token 验证 | 08-06 |
-| Agent 调度器 | `tianyao/agent_scheduler.py` (TimeScale tick) | 08-06 |
-| Observer 自进化 | `renyao/skills/observer.py` (≥5 次重复序列→自动生成 skill) | 08-06 |
-| 趋势追踪 skill | `renyao/skills/trend_track.py` | 08-06 |
-| 论文雷达 skill | `renyao/skills/paper_radar.py` | 08-06 |
-| 定时任务 skill | `renyao/skills/schedule.py` | 08-06 |
-| 翻译 skill | `renyao/skills/translate.py` | 08-06 |
-| 图像生成 skill | `renyao/skills/image_gen.py` | 08-06 |
-| Hook 系统 | `core/service.py` add_hook(pre_tool/post_tool) | 08-06 |
-| Session fork | `core/service.py` fork_session(name) | 08-06 |
-| /loop 循环任务 | CLI `/loop` 命令 | 08-06 |
-| /think 折叠切换 | CLI `/think` 展开/折叠 | 08-06 |
-| 思考折叠 UI | 💭Thinking summary 折叠显示 | 08-06 |
-| 历史搜索 | Ctrl+R FileHistory 持久化 | 08-06 |
+| 地图/空间/路径 | `gateway/map.html` + SenseNova + OSMnx | 08-06 |
+| Landing/部署/Nginx | `landing.html` + deploy.ps1 + nginx-yaopole.conf | 08-06 |
+| 登录鉴权 + Skills | TIANSHU_LOGIN_PASSWORD + 16 skills | 08-06 |
+| MCP Client | stdio + HTTP, McpClientManager, /mcp 命令 | 08-10 |
+| 硬件控制 v0.3 | WorldAdapter ABC, Modbus/Voxel/Sim 三后端 | 08-11 |
+| 社交媒体 | 5 平台 MCP Server, CDP JS 渲染 | 08-11 |
+| 统一世界 v0.1 | 一个 Server 多种后端 | 08-11 |
+| 体素世界 | Craft Python 3 port + VoxelAdapter | 08-11 |
+| 路由修复 | _parse_pref bug fix, v4-pro 正确路由 | 08-11 |
+| 安全加固 | run() 加入三道闸门 | 08-11 |
+| SSE 真流式 | token 级别实时输出 | 08-11 |
+| 死代码清理 | 删除 5 个死模块 ~800 行 | 08-11 |
+| Soul.md 帮助 | 18 个命令自助文档 + MCP 工具提示 | 08-12 |
+| CLI 工具图标 | 搜索/文件/Shell/MCP 分类图标 | 08-12 |
+| MCP 状态显示 | 启动时显示 server 连接状态 | 08-12 |
+| MCP 工具注入 | 动态工具列表注入 system prompt | 08-12 |
+| Agent 评测框架 | YAML 场景 + mock LLM 评分 | 08-12 |
 
 ---
 
@@ -263,5 +260,5 @@ Week 9-12:  P3-001(系统控制) → P3-004(文档站) → P3-005(性能) → P3
 
 ---
 
-> 最后更新: 2026-08-10
+> 最后更新: 2026-08-12
 > 下次复查: 每完成一项后更新状态 + 时间戳

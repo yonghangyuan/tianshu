@@ -12,7 +12,7 @@ from tianshu.sdk.models import (
     ToolCall, TokenUsage, ProviderResponse,
     AuditRecord, AuditLevel, SkillDef,
 )
-from tianshu.sdk.provider import BaseProvider
+from tianshu.diyao.providers.base import BaseProvider
 from tianshu.diyao.providers.registry import ProviderRegistry
 from tianshu.renyao.skills.loader import SkillLoader
 from tianshu.renyao.skills.observer import SkillObserver

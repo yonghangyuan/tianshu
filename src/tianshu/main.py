@@ -454,6 +454,16 @@ def _main_sync() -> None:
         _rich_console.print(f"  默认模型: [cyan]{default_model}[/cyan]")
     _rich_console.print()
 
+    # ── MCP 状态 ──
+    if core._mcp:
+        servers = core._mcp.list_servers()
+        if servers:
+            connected = sum(1 for s in servers if s.get("connected"))
+            _rich_console.print(f"  🔌 MCP: {connected}/{len(servers)} server 已连接 ({sum(s['tools'] for s in servers)} 工具)")
+        else:
+            _rich_console.print(f"  [dim]🔌 MCP: 无已配置的 server[/dim]")
+    _rich_console.print()
+
     renderer = StreamRenderer()
 
     # ── 同步主循环 ──

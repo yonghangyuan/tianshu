@@ -1,12 +1,12 @@
 # 天枢 Tianshu · 项目说明书
 
-> 最后更新: 2026-08-03
+> 最后更新: 2026-08-11
 
 ---
 
 ## 一、项目定位
 
-中国本土自主 AI Agent 框架。对标 Claude Code，借鉴 Hermes Agent + OpenClaw，但走自己的路。
+中国本土自主 AI Agent 框架。三爻架构(天/人/地)·MCP 协议·多 Agent 编排。
 
 **核心原则**: 独立自主 · 模型自主 · 数据主权 · 可审计 · 可追溯 · 可控制
 
@@ -18,142 +18,108 @@
 src/tianshu/
 ├── core/       AgentCore · Router · Planner · PolicyEngine · ToolRegistry · Commands
 ├── diyao/      地曜 — Provider 层 (DS/豆包/智谱/Moonshot) · Sandbox
-├── renyao/     人曜 — 12 Skills · 插件 · 自进化
+├── renyao/     人曜 — 12 Skills · MCP Client · 插件 · 自进化
 │   └── skills/ browser · web_search · file_ops · intel · shell · paper_radar ...
 ├── tianyao/    天曜 — 4 级审计 · Cron 调度
 ├── memory/     L2(MEMORY.md/USER.md) + L5(SQLite FTS5) · Prefetch · Digest · Decay · Compress
-├── gateway/    CLI · TUI · Server(群聊) · 飞书/微信/QQ(骨架)
+├── gateway/    CLI · TUI · Server(星群群聊) · 飞书/微信/QQ(骨架)
 └── sdk/        统一数据模型
 ```
 
-~80 文件 · ~16.7K 行 · 82 测试 · 4 核心依赖(httpx/pyyaml/aiosqlite/rich)
+55 文件 · ~15K 行 · 95 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
 
 ---
 
 ## 三、关键设计决策
 
-> **大模型本身不是最终生产力。**
-> **大模型与行业知识、组织流程、数据和基础设施结合后，才是生产力。**
-
-1. **三爻架构**: 天(治理/仲裁)·人(决策/调度)·地(感知/执行)——三道不可绕过的闸门。接口规范见 `docs/TIANSHU_INTERFACE_SPEC.md`
-2. **信息·能量·物质**: 天枢不是 Agent 框架，是三条流的调度系统。城市大脑和工业物联网是同一套架构在不同场景下的实例化
-3. **四层世界模型**: 不可观(冗余) · 可观(模式) · 可测(贝叶斯) · 可控(闭环)。三爻×四层=12种策略组合。自知之明优先于聪明。详见 `docs/TIANSHU_WORLD_MODEL.md`
-3. **时间异质性**: 每条消息有 TTL，每个 Agent 有时间尺度，信息按指数衰减——现有所有 Agent 框架缺失的维度
-4. **审计六问**: 决策前就写清"谁、有什么信息、考虑了什么、什么约束、结果如何、能复现吗"
-5. **自有浏览器**: httpx快速抓取 + Edge CDP渲染JS页面。零外部下载
-6. **自有搜索**: cn.bing.com → 搜狗 → 百度。零 API Key
-7. **代码量控制**: 12K行·一人可全审。不追功能数量，追可信度
+1. **三爻架构**: 天(治理/仲裁)·人(决策/调度)·地(感知/执行)——三道不可绕过的闸门
+2. **MCP 协议**: 完整 MCP Client 实现，支持 stdio + HTTP，已集成 4 个外部 server
+3. **自有浏览器**: httpx快速抓取 + Edge CDP渲染JS页面。零外部下载
+4. **自有搜索**: cn.bing.com → 搜狗 → 百度。零 API Key
+5. **安全**: run() 和 run_stream() 均有权限+策略+确认三道闸门
+6. **审计六问**: 决策前就写清"谁、有什么信息、考虑了什么、什么约束、结果如何、能复现吗"
+7. **模型路由**: 自动根据任务类型选择模型(routing rules)，支持用户直接指定
 
 ---
 
 ## 四、当前能力
 
-- CLI: tianshu-cli (Rich渲染·流式输出·模式切换·@file引用)
-- Server: tianshu-server (群聊·文件分享·Markdown渲染·@自动补全)
-- TUI: tianshu (Rich TUI·热键切换)
-- 25 工具·12 Skills·4 Provider·10 模型
-- Token 预算 500K·重复调用检测·错误分类
+- CLI: tianshu-cli (Rich渲染·流式输出·模式切换·@file引用·Spinner工具跟踪)
+- Server: tianshu-server (星群群聊·SSE流式·Markdown渲染·@自动补全)
+- 29 工具·16 Skills·4 Provider·10 模型
 - PolicyEngine: 6条声明式策略·工具执行前拦截
-- 记忆: 5功能(prefetch/digest/decay/compress/boost) + 自动画像 + FTS5全文检索，对标 Honcho/Mem0
 - Planner: Plan Mode 下 JSON 计划→逐步执行
-- 登录系统: 代码已写·服务器未部署
-- Android APP: WebView骨架·登录页·未完成
+- 记忆: FTS5全文检索 + 自动画像 + Digest + Decay + Compress，对标 Honcho/Mem0
+- MCP Client: 完整 stdio + HTTP 双 transport，支持多 server 并行
+- WorldAdapter: 统一 Modbus/Voxel/Sim 后端接口
+- 真 SSE 流式: token 级别实时输出
 
 ---
 
-## 五、待完成
+## 五、已集成的外部 MCP Server
 
-**剩余 P0**
-- [ ] Android APP 跑通(WebView加载聊天页) — 原生登录页已完成，待跑通完整链路
-- [ ] E2E 集成测试(至少1条: 搜索→浏览→总结)
+| Server | 协议 | 用途 |
+|--------|------|------|
+| tianshu-hardware | HTTP | 工业 Modbus 设备控制 (79 tests) |
+| tianshu-world | HTTP | 统一世界服务器 (3 种后端) |
+| tianshu-social | HTTP | 社交媒体搜索引擎 (5 平台) |
+| filesystem | stdio | 本地文件操作 |
 
-**P1 (下周)**
-- [ ] 星群 Agent 间直接通信协议(辩论/投票) — 编排器已完成，缺 peer-to-peer
-- [ ] 上下文语义压缩(辅助模型总结·非简单截断)
-- [ ] MCP 协议支持
+---
 
-**P2 (后续)**
-- [ ] 飞书 Bot 跑通
-- [ ] pip 包发布（包名 `tianshu` 已被占，需改名如 `tianshu-ai`）
-- [ ] Mac/Linux 兼容
-- [ ] Plan Mode 空错误修复
+## 六、待完成
+
+**P0**
+- [ ] Android APP 跑通
+
+**P1**
+- [ ] 星群 Agent 间直接通信协议
+- [ ] pip 包发布（需改名，`tianshu` 已被占）
 - [ ] RAG 私有知识库
-- [ ] Playwright 完整集成（截图/点击/填表）
+
+**P2**
+- [ ] 飞书 Bot 跑通
+- [ ] Mac/Linux 全面兼容
+- [ ] Playwright 集成（截图/点击/填表）
+- [ ] Skills 市场
 
 ---
 
-## 六、部署状态
+## 七、部署状态
 
 | 环境 | 地址 | 状态 |
 |---|---|---|
 | 本地 Windows | localhost | 开发机 |
-| 腾讯云 Ubuntu | 175.27.157.139:8720 | 运行中(无鉴权) |
-| GitHub | github.com/yonghangyuan/tianshu | 25+ commits |
-
-服务器更新方式: scp 文件 → 重启进程(GitHub被墙)
+| 腾讯云 Ubuntu | 175.27.157.139:8720 | 运行中 |
+| GitHub | github.com/yonghangyuan/tianshu | 已同步 |
+| Gitee | gitee.com/jiojio21/tianshu | 已同步 |
 
 ---
 
-## 七、常用命令
+## 八、常用命令
 
 ```bash
-# 本地
 tianshu-cli                  # CLI
 tianshu-server --port 8720   # Server
-pytest tests/ -q             # 测试
-
-# 服务器
-ssh ubuntu@175.27.157.139
-cd ~/tianshu && source .venv/bin/activate
-tianshu-server --port 8720
-
-# 部署(scp)
-scp F:\tianshu\src\tianshu\gateway\server.py ubuntu@175.27.157.139:~/tianshu/src/tianshu/gateway/
+pytest tests/ -q             # 测试 (95 passed)
+tianshu-world --backend sim  # 统一世界服务器
+tianshu-social --port 8750   # 社交媒体搜索
 ```
 
 ---
 
-## 八、关键文件
+## 九、关键文件
 
 | 文件 | 内容 |
 |---|---|
 | `core/service.py` | AgentCore.run_stream() —— 主循环 |
-| `core/turn_machine.py` | 状态机重构(参考·未接入) |
+| `core/router.py` | 模型路由器 |
 | `core/policy_engine.py` | 策略引擎 |
-| `core/planner.py` | 任务规划器 |
 | `core/tool_registry.py` | 工具注册中心 |
-| `memory/service.py` | 记忆系统 |
-| `gateway/server.py` | HTTP Server + 群聊 |
+| `renyao/mcp_client.py` | MCP 客户端 |
+| `gateway/server.py` | HTTP Server + 星群 |
 | `gateway/cli.py` | Rich 渲染器 |
-| `gateway/chat.html` | 群聊前端 |
-| `config/soul.md` | 系统提示词 |
-| `config/policy.yaml` | 策略规则 |
-| `config/providers.yaml` | 模型配置 |
-| `docs/ROADMAP.md` | 25项路线图 |
-| `docs/TIANSHU_ARCHITECTURE_V2.md` | V2架构设计 |
-
----
-
-## 九、本地开发文件
-
-`F:\tianshu_dev\` — 不推送的本地文件:
-- `docs/PHILOSOPHY.md` — 哲学基础
-- `docs/VISION.md` — 愿景
-- `docs/constellation_design.md` — 星群设计
-- `docs/intelligence_system_design.md` — 情报系统设计
-- `docs/android_app_plan.md` — Android计划
-- `android/` — Android项目源码
-
-`F:\hermes\多智能体信息协同\` — 相关文档:
-- `天枢_哲学基础_20260731.docx` / `天枢_哲学基础_v2.docx`
-- `天枢开发总结_2026-07-31.md`
-
----
-
-## 十、学习参考
-
-- **Hermes Agent** (Nous Research): 自进化·Curator·SKILL.md格式
-- **OpenClaw**: Gateway控制平面·Plugin SDK·多通道
-- **王戟教授**: 高可信软件架构理论→天曜审计
-
-天枢不是 Hermes + OpenClaw 的拼装。天枢有自己的轨道。
+| `config/soul.md` | 系统提示词(含操作帮助) |
+| `config/mcp.yaml` | MCP Server 配置 |
+| `config/providers.yaml` | 模型配置+路由规则 |
+| `docs/ROADMAP.md` | 路线图 |

@@ -27,6 +27,12 @@ servers:
     transport: http
     url: http://localhost:8721/mcp
 
+  # 天枢桌面控制 — 键鼠/截图/剪贴板/窗口
+  # 启动: tianshu-desktop --port 8760
+  desktop:
+    transport: http
+    url: http://localhost:8760/mcp
+
   # 天枢社交媒体 — 5 个平台，统一搜索/热搜
   # 启动: tianshu-social --port 8750
   social:

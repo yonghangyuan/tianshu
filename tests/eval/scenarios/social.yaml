@@ -1,0 +1,36 @@
+# 社交媒体搜索评测
+
+- name: "知乎热榜查询"
+  description: "Agent 应使用 social_hot 工具直接查询知乎热榜"
+  input: "看看今天的知乎热榜"
+  tags: [social, zhihu]
+  expect:
+    tools:
+      - name: social_hot
+        args_contains: {platform: zhihu}
+    output_contains: ["知乎"]
+    max_tools: 3
+    max_latency_ms: 15000
+
+- name: "微博热搜查询"
+  description: "Agent 应使用 social_hot 查询微博热搜"
+  input: "微博今天的热搜是什么"
+  tags: [social, weibo]
+  expect:
+    tools:
+      - name: social_hot
+        args_contains: {platform: weibo}
+    output_contains: ["微博"]
+    max_tools: 3
+    max_latency_ms: 15000
+
+- name: "微博关键词搜索"
+  description: "Agent 应使用 social_search 搜索微博"
+  input: "在微博上搜索 AI Agent"
+  tags: [social, weibo, search]
+  expect:
+    tools:
+      - name: social_search
+        args_contains: {platform: weibo, query: "AI Agent"}
+    max_tools: 3
+    max_latency_ms: 15000

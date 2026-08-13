@@ -294,9 +294,13 @@ class AgentCore:
         # ── MCP 延迟连接 ──
         if hasattr(self, '_mcp_pending_connect') and self._mcp_pending_connect:
             try:
-                await self._mcp.connect_all(
+                count = await self._mcp.connect_all(
                     self._mcp_pending_connect, self._tool_registry
                 )
+                if count > 0:
+                    self._context_engine.system_prompt = (
+                        (self._context_engine.system_prompt or "") + self._build_mcp_tools_section()
+                    )
             except Exception:
                 pass
             finally:
@@ -397,18 +401,44 @@ class AgentCore:
                     .get("reasoning_content", "")
                 )
 
-            # 执行工具
+            # 执行工具 — 安全闸门
             for tc in resp.tool_calls:
+                name, args = tc.name, tc.arguments
+
+                # ── 闸门 1: 权限检查 ──
+                perm = self._get_tool_permission(name)
+                whitelist = getattr(self, '_permission_whitelist', set())
+                auto_mode = getattr(self, '_mode', 'normal') == 'auto'
+
+                # ── 闸门 2: 策略引擎 ──
+                if self._policy_engine:
+                    decision = self._policy_engine.evaluate(name, args)
+                    if decision and decision.action == "deny":
+                        result_text = f"Policy denied: {decision.message} [{decision.policy_name}]"
+                        tool_results.append({"name": name, "success": False, "output": result_text[:500]})
+                        _s_tool(name, f"DENIED by {decision.policy_name}", 0)
+                        continue
+
+                # ── 闸门 3: 写入确认 ──
+                if perm >= 2 and name not in whitelist and not auto_mode:
+                    result_text = (
+                        f"Tool '{name}' requires confirmation (permission={perm}). "
+                        "Use 'always allow' in interactive CLI or switch to auto mode."
+                    )
+                    tool_results.append({"name": name, "success": False, "output": result_text[:500]})
+                    _s_tool(name, "CONFIRM_REQUIRED", 0)
+                    continue
+
                 t0_tool = time.time()
                 try:
-                    output = await self._execute_tool(tc.name, tc.arguments)
+                    output = await self._execute_tool(name, args)
                     success = True
                     result_text = str(output)
                 except Exception as e:
                     output = str(e)
                     success = False
                     result_text = f"Error: {e}"
-                _s_tool(tc.name, result_text[:60], int((time.time()-t0_tool)*1000))
+                _s_tool(name, result_text[:60], int((time.time()-t0_tool)*1000))
 
                 tool_results.append({
                     "name": tc.name,
@@ -518,12 +548,17 @@ class AgentCore:
             return
 
         # ── MCP 延迟连接 ──
-        # setup() 是同步的，MCP 连接需要 async——在这里完成
         if hasattr(self, '_mcp_pending_connect') and self._mcp_pending_connect:
             try:
-                await self._mcp.connect_all(
+                count = await self._mcp.connect_all(
                     self._mcp_pending_connect, self._tool_registry
                 )
+                # 动态注入 MCP 工具列表到 system prompt
+                if count > 0:
+                    mcp_tools_section = self._build_mcp_tools_section()
+                    self._context_engine.system_prompt = (
+                        (self._context_engine.system_prompt or "") + mcp_tools_section
+                    )
             except Exception as e:
                 yield ContentDelta(
                     text=f"\n⚠️ MCP 连接失败: {type(e).__name__}: {e}\n"
@@ -1097,6 +1132,27 @@ class AgentCore:
         if self._tool_registry:
             return self._tool_registry.get_tools(mode=self._mode)
         return None
+
+    def _build_mcp_tools_section(self) -> str:
+        """构建 MCP 工具参考——动态注入 system prompt。"""
+        if not self._mcp:
+            return ""
+        tools = self._mcp.list_tools()
+        if not tools:
+            return ""
+
+        lines = ["", "## 已连接的 MCP 工具", ""]
+        by_server: dict[str, list] = {}
+        for t in tools:
+            srv = t.get("server", "other")
+            by_server.setdefault(srv, []).append(f"`{t['name']}` — {t.get('description', '')[:100]}")
+
+        for srv, tls in sorted(by_server.items()):
+            lines.append(f"### {srv}")
+            for tl in tls:
+                lines.append(f"- {tl}")
+        lines.append("")
+        return "\n".join(lines)
 
     def _get_tool_permission(self, name: str) -> int:
         """获取工具的风险级别。
