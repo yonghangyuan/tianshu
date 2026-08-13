@@ -23,6 +23,7 @@ from ..sdk.trigram import (
     AuditSixQuestions, DecisionContext,
 )
 from ..tianyao.agent_scheduler import AgentScheduler, TickCallback
+from .comm import StarBus, current_agent, reset_current_agent, set_current_agent
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -90,14 +91,113 @@ class Orchestrator:
         self.active: dict[str, SubAgent] = {}       # agent_id → SubAgent
         self.by_name: dict[str, SubAgent] = {}      # name → SubAgent
         self.scheduler = AgentScheduler()
+        self.bus = StarBus()                        # 星群消息总线 (P2-006)
         self._ready = False
 
     # ── 初始化 ─────────────────────────────────────────────────────
 
     def setup(self, core: Any) -> None:
-        """注入 AgentCore 实例。"""
+        """注入 AgentCore 实例，并向工具注册中心注册星群通信工具。"""
         self.core = core
+        self._register_comm_tools()
         self._ready = True
+
+    # ── 通信工具注册 (P2-006) ─────────────────────────────────────
+
+    def _register_comm_tools(self) -> int:
+        """把星群通信工具注册进 ToolRegistry（reload 时先清理旧注册）。"""
+        reg = getattr(self.core, "_tool_registry", None)
+        if reg is None:
+            return 0
+        try:
+            reg.unregister_prefix("starbus")
+        except Exception:
+            pass
+        from ..core.tool_registry import ToolInfo
+
+        def _t(name, desc, params, handler, perm=0):
+            reg.register(ToolInfo(
+                name=name, description=desc, parameters=params,
+                handler=handler, permission=perm, skill_name="starbus",
+            ))
+            return 1
+
+        n = 0
+        n += _t(
+            "send_message",
+            "给另一个 Agent 直接发消息（或发布到话题）。星群总线直连，不经调度器中转。",
+            {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string", "description": "接收方 Agent 名"},
+                    "content": {"type": "string", "description": "消息内容"},
+                    "topic": {"type": "string", "description": "发布到话题而非点对点（可选）"},
+                },
+                "required": ["to", "content"],
+            },
+            self._tool_send_message,
+        )
+        n += _t(
+            "read_inbox",
+            "读取你自己的收件箱（其他 Agent 发来的消息）。",
+            {"type": "object", "properties": {}},
+            self._tool_read_inbox,
+        )
+        n += _t(
+            "read_board",
+            "读取共享记忆板。key 为空时列出所有条目。",
+            {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "条目 key，空=全部"},
+                },
+            },
+            self._tool_read_board,
+        )
+        n += _t(
+            "post_board",
+            "向共享记忆板写入一条（key 相同则版本 +1，历史保留）。",
+            {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "条目 key"},
+                    "content": {"type": "string", "description": "内容"},
+                },
+                "required": ["key", "content"],
+            },
+            self._tool_post_board,
+        )
+        return n
+
+    # ── 通信工具 handlers ──────────────────────────────────────────
+
+    async def _tool_send_message(self, to: str, content: str, topic: str = "") -> str:
+        src = current_agent()
+        if topic:
+            sent = self.bus.publish(topic, src, content)
+            return f"✅ 已发布到话题 '{topic}' → {len(sent)} 个订阅者"
+        self.bus.send(src, to, content)
+        return f"✅ 已发送 → {to}"
+
+    async def _tool_read_inbox(self) -> str:
+        msgs = self.bus.inbox(current_agent())
+        if not msgs:
+            return "收件箱为空"
+        lines = [f"[{m.source}] {m.intent}" for m in msgs]
+        return "\n".join(lines)
+
+    async def _tool_read_board(self, key: str = "") -> str:
+        if key:
+            entry = self.bus.read(key)
+            return f"未找到 '{key}'" if entry is None else f"{key} (v{entry.version}, {entry.source}): {entry.value}"
+        entries = self.bus.board_snapshot()
+        if not entries:
+            return "共享记忆板为空"
+        return "\n".join(f"{e['key']} (v{e['version']}, {e['source']}): {e['value'][:200]}" for e in entries)
+
+    async def _tool_post_board(self, key: str, content: str) -> str:
+        entry = self.bus.post(key, content, current_agent())
+        return f"✅ 已写入记忆板: {key} (v{entry.version})"
 
     # ── 创建 ───────────────────────────────────────────────────────
 
@@ -185,6 +285,11 @@ class Orchestrator:
                 f"{task}"
             )
 
+        # 星群通信上下文注入 (P2-006): 收件箱 + 共享记忆板
+        comm_block = self._comm_context_block(agent.name)
+        if comm_block:
+            task_with_isolation += "\n\n" + comm_block
+
         msg = TrigramMessage.create(
             source=AgentRef(Layer.REN, "orchestrator"),
             target=agent.ref,
@@ -204,11 +309,16 @@ class Orchestrator:
                 from ..sdk.models import AgentRequest, AgentContext
                 ctx = AgentContext(session_id=agent.agent_id)
                 req = AgentRequest(
-                    input=f"[子Agent: {agent.name}]\n任务: {task}\n可用工具: {', '.join(agent.skills)}",
+                    input=f"[子Agent: {agent.name}]\n任务: {task_with_isolation}\n可用工具: {', '.join(agent.skills)}",
                     task_type="conversation",
                     model_override=agent.model,
                 )
-                resp = await self.core.run(req, ctx)
+                # 设置通信身份（contextvars，并发安全）——Agent 调星群工具时自动归属
+                token = set_current_agent(agent.name)
+                try:
+                    resp = await self.core.run(req, ctx)
+                finally:
+                    reset_current_agent(token)
                 agent.status = "done" if resp.error == "" else "error"
                 if resp.content:
                     # 构造结果消息
@@ -239,6 +349,31 @@ class Orchestrator:
             target=AgentRef(Layer.REN, "orchestrator"),
             intent=f"{agent.name}: 调度器未就绪或无 AgentCore",
         )
+
+    # ── 通信上下文 (P2-006) ──────────────────────────────────────
+
+    def _comm_context_block(self, agent_name: str) -> str:
+        """构建注入任务提示词的通信上下文块（收件箱 + 记忆板）。"""
+        parts: list[str] = []
+        msgs = self.bus.inbox(agent_name)
+        if msgs:
+            lines = [f"- [{m.source} → 你] {m.intent}" for m in msgs[:10]]
+            parts.append("📥 你的收件箱:\n" + "\n".join(lines))
+        board = self.bus.board_snapshot(limit=10)
+        if board:
+            lines = [f"- {b['key']} (v{b['version']}): {b['value'][:100]}" for b in board]
+            parts.append("📋 共享记忆板:\n" + "\n".join(lines))
+        if not parts:
+            return ""
+        return (
+            "【星群通信 — 你可以用 send_message / read_inbox / read_board / "
+            "post_board 工具与其他 Agent 直接通信】\n" + "\n\n".join(parts)
+        )
+
+    def send_message(self, source: str, target: str, intent: str,
+                     payload: dict[str, Any] | None = None) -> Any:
+        """调度器 API: 以任意 Agent 名义发消息到另一个 Agent 的收件箱。"""
+        return self.bus.send(source, target, intent, payload)
 
     # ── 收集 ──────────────────────────────────────────────────────
 
@@ -345,6 +480,108 @@ class Orchestrator:
             "votes": votes,
         }
 
+    # ── 星群辩论 (P2-006) ────────────────────────────────────────
+
+    async def debate(
+        self,
+        topic: str,
+        agents: list[dict],
+        rounds: int = 1,
+        model: str = "deepseek-v4-flash",
+    ) -> dict[str, Any]:
+        """星群辩论——多 Agent 就同一辩题多轮陈述，观点经共享记忆板互见。
+
+        Args:
+            topic: 辩题
+            agents: [{"name", "position"(初始立场), "skills"(可选)}, ...]
+            rounds: 辩论轮数（后续轮次能看到前面所有陈述）
+
+        Returns:
+            {topic, rounds, positions: {name: 最终陈述}, board: [...]}
+        """
+        for r in range(rounds):
+            for spec in agents:
+                name = spec["name"]
+                agent = await self.create_agent(
+                    name, spec.get("skills", ["web_search"]), model,
+                )
+                prev = self.bus.read(f"debate:{topic}:{name}")
+                prev_text = f"\n你上一轮的陈述: {prev.value}" if prev else ""
+                task = (
+                    f"【星群辩论 第 {r + 1}/{rounds} 轮】\n"
+                    f"辩题: {topic}\n"
+                    f"你的初始立场: {spec.get('position', '')}\n"
+                    f"{prev_text}\n\n"
+                    f"记忆板中已有其他 Agent 的陈述，请先反驳其中最有力的不同意见，"
+                    f"再陈述/修正你的立场，最后给出一句话结论。"
+                )
+                msg = await self.dispatch(agent, task)
+                result = msg.payload.get("result", "") if msg.payload else ""
+                self.bus.post(f"debate:{topic}:{name}", result[:2000], name)
+                await self.destroy(agent)
+
+        return {
+            "topic": topic,
+            "rounds": rounds,
+            "positions": {
+                b["key"].split(":")[-1]: b["value"]
+                for b in self.bus.board_snapshot(prefix=f"debate:{topic}:")
+            },
+        }
+
+    # ── 星群投票 (P2-006) ────────────────────────────────────────
+
+    async def vote(
+        self,
+        question: str,
+        options: list[str],
+        voters: list[dict],
+        model: str = "deepseek-v4-flash",
+    ) -> dict[str, Any]:
+        """星群投票——多个投票 Agent 独立表决，汇总票数。
+
+        Args:
+            question: 表决问题
+            options: 候选选项列表
+            voters: [{"name", "skills"(可选)}, ...]
+
+        Returns:
+            {question, tally: {option: count}, winner, details: [...]}
+        """
+        import re as _re
+        tally: dict[str, int] = {opt: 0 for opt in options}
+        details: list[dict] = []
+        for spec in voters:
+            name = spec["name"]
+            agent = await self.create_agent(
+                name, spec.get("skills", ["web_search"]), model,
+            )
+            task = (
+                f"【星群投票】问题: {question}\n"
+                f"候选选项: {', '.join(options)}\n"
+                f"必须选择其中一个。输出格式第一行: VOTE: <选项名>，"
+                f"第二行: 理由（一句话）。"
+            )
+            msg = await self.dispatch(agent, task)
+            result = msg.payload.get("result", "") if msg.payload else ""
+            choice = ""
+            m = _re.search(r"VOTE[::]\s*(.+)", result, _re.IGNORECASE)
+            if m:
+                raw = m.group(1).strip().split("\n")[0].strip()
+                choice = next((o for o in options if o in raw), "")
+            if choice:
+                tally[choice] += 1
+            details.append({"agent": name, "choice": choice or "弃权", "raw": result[:200]})
+            await self.destroy(agent)
+
+        winner = max(tally, key=lambda k: tally[k]) if any(tally.values()) else ""
+        return {
+            "question": question,
+            "tally": tally,
+            "winner": winner,
+            "details": details,
+        }
+
     # ── 销毁 ──────────────────────────────────────────────────────
 
     async def destroy(self, agent: SubAgent) -> bool:
@@ -360,6 +597,7 @@ class Orchestrator:
 
         agent_id = agent.agent_id
         self.scheduler.unregister(agent.ref)
+        self.bus.clear_agent(agent.name)   # 清理收件箱与订阅 (P2-006)
         self.by_name.pop(agent.name, None)
         removed = self.active.pop(agent_id, None)
         return removed is not None

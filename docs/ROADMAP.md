@@ -143,10 +143,11 @@
 - **描述**: `renyao/orchestrator.py` (490 行) — create_agent(worker 隔离) → dispatch(依赖等待) → execute_parallel(asyncio.gather) → verify(对抗性多 Agent 验证投票) → destroy(清理)。CLI `/orchestrate` + Server `/agents/*` API 均已接线
 
 ### P2-006 — Agent 间通信协议
-- **状态**: ⬜ 待办
-- **创建**: 2026-07-28 | **更新**: 2026-08-10
-- **描述**: Agent 间直接消息传递、共享记忆、辩论/投票机制。当前子 Agent 仅能通过编排器中转，无直接通信。三爻消息协议（`sdk/trigram.py`）已定义 TrigramsMessage 基础设施
-- **预计**: 5-7 天
+- **状态**: ✅ 已完成
+- **创建**: 2026-07-28 | **完成**: 2026-08-13
+- **描述**: Agent 间直接消息传递、共享记忆、辩论/投票机制。当前子 Agent 仅能通过编排器中转，无直接通信
+- **实现**: `renyao/comm.py` StarBus 消息总线 — direct(mailbox, TTL 过期) + broadcast(topic 订阅) + board(共享记忆板, 版本历史)。4 个通信工具 (send_message/read_inbox/read_board/post_board) 注册进 ToolRegistry，调用方身份经 contextvars 自动归属（并发安全）。Orchestrator: dispatch 注入通信上下文、debate()/vote() 星群辩论投票。CLI `/star` 命令组。24 测试
+- **附带修复**: worker 隔离提示此前只进 payload 未达 LLM input，一并修复（有回归测试）
 - **OpenClaw 对标**: HiClaw (Matrix 协议)
 
 ---
@@ -241,12 +242,12 @@
 |:------:|:----:|:------:|:------:|:----:|
 | P0 | 5 | 3 | 0 | 2 |
 | P1 | 7 | 5 | 0 | 2 |
-| P2 | 6 | 3 | 1 | 2 |
+| P2 | 6 | 4 | 1 | 1 |
 | P3 | 7 | 2 | 1 | 4 |
 | Android | 1 | 0 | 1 | 0 |
-| **合计** | **26** | **13** | **3** | **10** |
+| **合计** | **26** | **14** | **3** | **9** |
 
-**完成率: 50%** (13/26)，另有 3 项进行中
+**完成率: 54%** (14/26)，另有 3 项进行中
 
 ---
 

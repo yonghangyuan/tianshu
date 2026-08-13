@@ -60,6 +60,7 @@ def _print_cmd_help() -> None:
         ("/session", "会话管理"),
         ("/memory", "记忆管理"),
         ("/rag", "RAG 知识库"),
+        ("/star", "星群通信"),
         ("/tools", "查看工具"),
         ("/mode, Tab", "切换 normal/auto/plan"),
         ("/cost", "Token 消耗"),
@@ -762,6 +763,17 @@ def _main_sync() -> None:
             _handle_rag_command(sub, arg)
             continue
 
+        # ── 星群通信命令 ──
+        elif user_input in ("star", "/star"):
+            _handle_star_command("", "", core)
+            continue
+        elif user_input.startswith("star ") or user_input.startswith("/star "):
+            parts = user_input.split(maxsplit=2)
+            sub = parts[1] if len(parts) > 1 else ""
+            arg = parts[2] if len(parts) > 2 else ""
+            _handle_star_command(sub, arg, core)
+            continue
+
         # ── @file 文件引用解析 ──
         resolved_input = _resolve_at_refs(user_input)
 
@@ -1174,6 +1186,53 @@ def _handle_rag_command(sub: str, arg: str) -> None:
     else:
         _rich_console.print(
             "\n[dim]用法: /rag | /rag search <查询> | /rag ingest <路径> | /rag delete <集合>[/dim]\n"
+        )
+
+
+def _handle_star_command(sub: str, arg: str, core) -> None:
+    """处理 /star 命令 — 星群消息总线状态 (P2-006)。"""
+    bus = core.orchestrator.bus
+    if sub in ("", "status", "s"):
+        st = bus.stats()
+        _rich_console.print(f"\n  ==== 星群通信总线 ====")
+        _rich_console.print(
+            f"  总消息: [cyan]{st['total_messages']}[/cyan] | "
+            f"记忆板条目: [cyan]{st['board_keys']}[/cyan]"
+        )
+        for t, subs in st["topics"].items():
+            _rich_console.print(f"  📢 话题 [bold]{t}[/bold]: {', '.join(subs) or '(无订阅者)'}")
+        inboxes = {a: n for a, n in st["inboxes"].items() if n}
+        for a, n in inboxes.items():
+            _rich_console.print(f"  📥 [bold]{a}[/bold]: {n} 条未读")
+        if not st["topics"] and not inboxes:
+            _rich_console.print("  [dim]总线空闲 — 子 Agent 可用 send_message/read_inbox/read_board/post_board 直接通信[/dim]")
+        _rich_console.print()
+    elif sub in ("inbox", "i") and arg:
+        msgs = bus.inbox(arg)
+        _rich_console.print(f"\n  ==== {arg} 的收件箱 ({len(msgs)} 条) ====")
+        for m in msgs:
+            _rich_console.print(f"  [{m.source} → {m.target}] {m.intent}")
+        if not msgs:
+            _rich_console.print("  [dim]空[/dim]")
+        _rich_console.print()
+    elif sub in ("board", "b"):
+        entries = bus.board_snapshot()
+        _rich_console.print(f"\n  ==== 共享记忆板 ({len(entries)} 条) ====")
+        for e in entries:
+            _rich_console.print(f"  [bold]{e['key']}[/bold] (v{e['version']}, {e['source']}): {e['value'][:100]}")
+        if not entries:
+            _rich_console.print("  [dim]空[/dim]")
+        _rich_console.print()
+    elif sub in ("send",) and arg:
+        parts = arg.split(maxsplit=1)
+        if len(parts) < 2:
+            _rich_console.print("\n  [dim]用法: /star send <目标Agent> <消息内容>[/dim]\n")
+            return
+        msg = bus.send("orchestrator", parts[0].strip(), parts[1].strip())
+        _rich_console.print(f"\n  ✅ 已发送 → [cyan]{parts[0].strip()}[/cyan] ({msg.msg_id})\n")
+    else:
+        _rich_console.print(
+            "\n[dim]用法: /star | /star inbox <Agent> | /star board | /star send <Agent> <内容>[/dim]\n"
         )
 
 

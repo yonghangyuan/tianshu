@@ -27,7 +27,7 @@ src/tianshu/
 └── sdk/        统一数据模型
 ```
 
-62 文件 · ~18K 行 · 164 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
+63 文件 · ~19K 行 · 207 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
 
 ---
 
@@ -47,13 +47,14 @@ src/tianshu/
 
 - CLI: tianshu-cli (Rich渲染·流式输出·模式切换·@file引用·Spinner工具跟踪)
 - Server: tianshu-server (星群群聊·SSE流式·Markdown渲染·@自动补全)
-- 46 工具·15 Skills·4 Provider·10 模型
+- 50 工具·15 Skills·4 Provider·10 模型
 - PDF 工具箱: Markdown/HTML → PDF (Edge headless 渲染·CJK 系统字体) + 合并/拆分/旋转/水印/加密/提取/表单 (pypdf)，对标 Hermes pdf skill
 - PolicyEngine: 6条声明式策略·工具执行前拦截
 - Planner: Plan Mode 下 JSON 计划→逐步执行
 - 记忆: FTS5全文检索 + 自动画像 + Digest + Decay + Compress，对标 Honcho/Mem0
 - RAG 知识库: SQLite FTS5(BM25) + float32 向量混合检索(RRF融合)，零新增硬依赖，PDF/Markdown/代码摄取
 - MCP Client: 完整 stdio + HTTP 双 transport，支持多 server 并行
+- 星群通信: StarBus 总线 — Agent 间点对点消息/话题广播/共享记忆板 + 辩论/投票
 - WorldAdapter: 统一 Modbus/Voxel/Sim 后端接口
 - 真 SSE 流式: token 级别实时输出
 
@@ -76,7 +77,7 @@ src/tianshu/
 - [ ] Android APP 跑通
 
 **P1**
-- [ ] 星群 Agent 间直接通信协议
+- [x] 星群 Agent 间直接通信协议 (08-13)
 - [ ] pip 包发布（需改名，`tianshu` 已被占）
 - [x] RAG 私有知识库 (08-13)
 
