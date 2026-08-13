@@ -1,0 +1,130 @@
+{
+  "name": "pdf-export",
+  "description": "PDF 生成与工具箱: Markdown/HTML → PDF（Edge 渲染），合并/拆分/信息",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "md_to_pdf",
+      "description": "把 Markdown 内容（或 .md 文件路径）转成 PDF。使用本机 Edge 渲染，中英文混排质量好，A4 排版。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Markdown 内容或 .md/.txt 文件路径"
+          },
+          "output": {
+            "type": "string",
+            "description": "输出 PDF 路径，默认与源文件同名"
+          },
+          "title": {
+            "type": "string",
+            "description": "文档标题（PDF 元信息），默认取文件名"
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "html_to_pdf",
+      "description": "把 HTML 内容（或 .html 文件路径）转成 PDF。片段自动套用 A4 打印模板；完整文档自动注入打印 CSS。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "HTML 内容或 .html/.htm 文件路径"
+          },
+          "output": {
+            "type": "string",
+            "description": "输出 PDF 路径，默认与源文件同名"
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_merge",
+      "description": "把多个 PDF 文件按顺序合并为一个。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "PDF 文件路径列表，按合并顺序"
+          },
+          "output": {
+            "type": "string",
+            "description": "输出 PDF 路径（必填）"
+          }
+        },
+        "required": [
+          "paths",
+          "output"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_split",
+      "description": "把一个 PDF 拆成单页文件（<原名>_p1.pdf, _p2.pdf ...）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "PDF 文件路径"
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "输出目录，默认与源文件同目录"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_info",
+      "description": "查看 PDF 页数、标题、是否加密。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "PDF 文件路径"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "permission": 0
+    }
+  ],
+  "trigger_keywords": [
+    "生成pdf",
+    "导出pdf",
+    "转pdf",
+    "md转pdf",
+    "markdown转pdf",
+    "html转pdf",
+    "合并pdf",
+    "拆分pdf",
+    "pdf信息",
+    "pdf页数"
+  ],
+  "handler": "tianshu.renyao.skills.pdf_export:PDFExportSkill"
+}

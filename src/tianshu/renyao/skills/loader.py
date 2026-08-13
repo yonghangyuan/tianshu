@@ -129,6 +129,7 @@ class SkillLoader:
         from . import web_search, translate, schedule, shell, image_gen
         from . import file_ops, browser, intel
         from . import vision, map_tools, rag
+        from . import pdf_export
 
         builtins: list[BaseSkill] = [
             paper_radar.PaperRadarSkill(),
@@ -145,6 +146,7 @@ class SkillLoader:
             vision.VisionSkill(),
             map_tools.MapToolsSkill(),
             rag.RAGSkill(),
+            pdf_export.PDFExportSkill(),
         ]
 
         for skill in builtins:

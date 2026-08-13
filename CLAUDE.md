@@ -18,8 +18,8 @@
 src/tianshu/
 ├── core/       AgentCore · Router · Planner · PolicyEngine · ToolRegistry · Commands
 ├── diyao/      地曜 — Provider 层 (DS/豆包/智谱/Moonshot) · Sandbox
-├── renyao/     人曜 — 12 Skills · MCP Client · 插件 · 自进化
-│   └── skills/ browser · web_search · file_ops · intel · shell · paper_radar ...
+├── renyao/     人曜 — 15 Skills · MCP Client · 插件 · 自进化
+│   └── skills/ browser · web_search · file_ops · intel · shell · paper_radar · rag · pdf_export ...
 ├── tianyao/    天曜 — 4 级审计 · Cron 调度
 ├── memory/     L2(MEMORY.md/USER.md) + L5(SQLite FTS5) · Prefetch · Digest · Decay · Compress
 ├── rag/        RAG 知识库 — chunker · embedder(API/Mock) · HybridStore · RAGService
@@ -27,7 +27,7 @@ src/tianshu/
 └── sdk/        统一数据模型
 ```
 
-60 文件 · ~16K 行 · 133 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
+62 文件 · ~17K 行 · 152 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
 
 ---
 
@@ -47,7 +47,8 @@ src/tianshu/
 
 - CLI: tianshu-cli (Rich渲染·流式输出·模式切换·@file引用·Spinner工具跟踪)
 - Server: tianshu-server (星群群聊·SSE流式·Markdown渲染·@自动补全)
-- 29 工具·16 Skills·4 Provider·10 模型
+- 38 工具·15 Skills·4 Provider·10 模型
+- PDF 导出: Markdown/HTML → PDF (Edge headless 渲染·CJK 系统字体) + 合并/拆分/信息 (pypdf)
 - PolicyEngine: 6条声明式策略·工具执行前拦截
 - Planner: Plan Mode 下 JSON 计划→逐步执行
 - 记忆: FTS5全文检索 + 自动画像 + Digest + Decay + Compress，对标 Honcho/Mem0

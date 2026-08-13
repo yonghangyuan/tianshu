@@ -231,6 +231,7 @@
 | MCP 状态显示 | 启动时显示 server 连接状态 | 08-12 |
 | MCP 工具注入 | 动态工具列表注入 system prompt | 08-12 |
 | Agent 评测框架 | YAML 场景 + mock LLM 评分 | 08-12 |
+| PDF 导出 | Edge headless print-to-pdf + pypdf 工具箱 (5 工具) | 08-13 |
 
 ---
 

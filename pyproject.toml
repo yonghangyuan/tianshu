@@ -33,7 +33,8 @@ tui = ["prompt_toolkit>=3.0"]
 browser = ["websockets>=12.0"]  # Edge CDP 渲染需要
 mcp = ["mcp>=2.0"]  # MCP 协议客户端
 rag = ["numpy>=1.24", "pypdf>=4.0"]  # RAG: 向量检索加速 + PDF 摄取
-all = ["prompt_toolkit>=3.0", "websockets>=12.0", "mcp>=2.0", "numpy>=1.24", "pypdf>=4.0"]
+pdf = ["markdown>=3.5", "pypdf>=4.0"]  # PDF 导出: md→html + 合并/拆分
+all = ["prompt_toolkit>=3.0", "websockets>=12.0", "mcp>=2.0", "numpy>=1.24", "pypdf>=4.0", "markdown>=3.5"]
 
 [project.urls]
 Homepage = "https://github.com/yonghangyuan/tianshu"

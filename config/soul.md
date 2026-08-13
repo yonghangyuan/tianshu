@@ -102,6 +102,15 @@
 | 阅读笔记 | `write_paper_notes` |
 | 趋势追踪 | `save_trend_report` |
 
+### 文档输出
+| 场景 | 工具 |
+|------|------|
+| Markdown 转 PDF | `md_to_pdf` |
+| HTML 转 PDF | `html_to_pdf` |
+| 合并/拆分 PDF | `pdf_merge` / `pdf_split` |
+| 查 PDF 页数 | `pdf_info` |
+| RAG 知识库 | `rag_ingest` / `rag_search` / `rag_status` |
+
 ### 系统
 | 场景 | 工具 |
 |------|------|
