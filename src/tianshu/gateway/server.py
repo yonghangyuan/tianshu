@@ -37,7 +37,7 @@ _ws_names: dict[WebSocket, str] = {}
 
 # ── 安全配置 ──
 import hashlib, os as _os
-SERVER_TOKEN = _os.environ.get("TIANSHU_TOKEN", "tianshu")
+SERVER_TOKEN = _os.environ.get("TIANSHU_TOKEN", "")
 LOGIN_PASSWORD = _os.environ.get("TIANSHU_LOGIN_PASSWORD", "")
 MAX_INPUT_LENGTH = 2000
 import secrets as _secrets
@@ -93,6 +93,42 @@ class RunResponse(BaseModel):
     error: str = ""
 
 
+def _check_auth_token(token: str) -> bool:
+    """检查 token 是否有效（WebSocket 用）。"""
+    if not LOGIN_PASSWORD:
+        return False
+    return bool(token) and token in _login_tokens
+
+
+def _check_auth(request: Request) -> bool:
+    """检查请求是否已登录（Cookie / query token / Bearer 头三种方式）。
+
+    未配置密码时拒绝所有访问（除 /login、/health）。
+    """
+    if not LOGIN_PASSWORD:
+        return False
+    token = request.cookies.get("tianshu_token", "")
+    if token in _login_tokens:
+        return True
+    token = request.query_params.get("token", "")
+    if token in _login_tokens:
+        return True
+    # Authorization: Bearer <token> — 登录颁发的 token 或显式配置的 SERVER_TOKEN
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:].strip()
+        if token in _login_tokens:
+            return True
+        if SERVER_TOKEN and token == SERVER_TOKEN:
+            return True
+    return False
+
+
+async def require_auth(request: Request):
+    if not _check_auth(request):
+        raise HTTPException(401, "请先登录")
+
+
 # ── 端点 ──────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -109,7 +145,7 @@ async def health():
 
 
 @app.post("/run", response_model=RunResponse)
-async def run(req: RunRequest):
+async def run(req: RunRequest, _=Depends(require_auth)):
     """执行 Agent 对话（需要 Token 鉴权）。"""
     if _core is None:
         raise HTTPException(503, "AgentCore not initialized")
@@ -140,7 +176,7 @@ async def run(req: RunRequest):
 
 
 @app.get("/tools")
-async def tools():
+async def tools(_=Depends(require_auth)):
     """获取可用工具列表。"""
     if _core is None:
         raise HTTPException(503)
@@ -148,7 +184,7 @@ async def tools():
 
 
 @app.get("/audit")
-async def audit(limit: int = 10):
+async def audit(limit: int = 10, _=Depends(require_auth)):
     """获取最近审计记录。"""
     if _core is None:
         raise HTTPException(503)
@@ -157,7 +193,7 @@ async def audit(limit: int = 10):
 
 
 @app.get("/memory")
-async def memory(limit: int = 10):
+async def memory(limit: int = 10, _=Depends(require_auth)):
     """获取最近记忆。"""
     if _core is None:
         raise HTTPException(503)
@@ -168,7 +204,7 @@ async def memory(limit: int = 10):
 
 
 @app.get("/skills")
-async def skills():
+async def skills(_=Depends(require_auth)):
     """获取 Skills 列表。"""
     if _core is None:
         raise HTTPException(503)
@@ -176,7 +212,7 @@ async def skills():
 
 
 @app.post("/run/stream")
-async def run_stream(req: RunRequest):
+async def run_stream(req: RunRequest, _=Depends(require_auth)):
     """SSE 流式 Agent 对话——真正的 token 级别流式输出。"""
     if _core is None:
         raise HTTPException(503)
@@ -408,26 +444,6 @@ async def login(req: LoginReq):
     resp.set_cookie("tianshu_token", token, httponly=True)
     return resp
 
-def _check_auth_token(token: str) -> bool:
-    """检查 token 是否有效（WebSocket 用）。"""
-    if not LOGIN_PASSWORD:
-        return False
-    return bool(token) and token in _login_tokens
-
-
-def _check_auth(request: Request) -> bool:
-    """检查请求是否已登录。未配置密码时拒绝所有访问。"""
-    if not LOGIN_PASSWORD:
-        return False
-    token = request.cookies.get("tianshu_token", "")
-    if token in _login_tokens:
-        return True
-    token = request.query_params.get("token", "")
-    return token in _login_tokens
-
-async def require_auth(request: Request):
-    if not _check_auth(request):
-        raise HTTPException(401, "请先登录")
 
 @app.get("/chat")
 async def chat_page(request: Request):
@@ -438,7 +454,7 @@ async def chat_page(request: Request):
 
 
 @app.get("/models")
-async def models():
+async def models(_=Depends(require_auth)):
     """获取已注册模型。"""
     if _core is None:
         raise HTTPException(503)
