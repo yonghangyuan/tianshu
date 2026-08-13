@@ -113,8 +113,10 @@ def _html_doc_to_pdf(html_doc: str, pdf_path: Path) -> Path:
     pdf_path = pdf_path.expanduser().resolve()
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 临时 HTML 文件（file:// URI 传给浏览器）
+    # 临时 HTML 文件（file:// URI 传给浏览器）——立即关 fd，否则 Windows
+    # 下打开的句柄会阻止 Edge 读写该文件
     fd, tmp_name = tempfile.mkstemp(suffix=".html", prefix="tianshu_pdf_")
+    os.close(fd)
     tmp_html = Path(tmp_name)
     # 每次调用独立 profile 目录——共用目录时连发的 Edge 实例会挂到
     # 第一个进程上（SingletonLock），不渲染直接退出
@@ -269,13 +271,211 @@ def _info(path: str) -> str:
     return "\n".join(lines)
 
 
+def _rotate(path: str, angle: int, output: str = "") -> str:
+    """旋转 PDF（90 的倍数，顺时针）。"""
+    PdfReader, PdfWriter = _require_pypdf()
+    if angle % 90 != 0:
+        raise ValueError(f"旋转角度必须是 90 的倍数: {angle}")
+    src = Path(path).expanduser()
+    if not src.exists():
+        raise FileNotFoundError(f"PDF 不存在: {path}")
+    reader = PdfReader(str(src))
+    for page in reader.pages:
+        page.rotate(angle)
+    writer = PdfWriter()
+    writer.append(reader)
+    out = _resolve_output(output, src) if output else src.with_name(f"{src.stem}_rot{angle}.pdf")
+    with open(out, "wb") as f:
+        writer.write(f)
+    return f"✅ 旋转 {angle}° → {out} ({len(reader.pages)} 页)"
+
+
+def _extract_text(path: str, page: int = 0, output: str = "") -> str:
+    """提取 PDF 文本。page=0 → 全部；否则第 N 页。超长自动落盘 .txt。"""
+    PdfReader, _ = _require_pypdf()
+    src = Path(path).expanduser()
+    if not src.exists():
+        raise FileNotFoundError(f"PDF 不存在: {path}")
+    reader = PdfReader(str(src))
+    if page > 0:
+        if page > len(reader.pages):
+            raise ValueError(f"页码超界: {page} > {len(reader.pages)}")
+        return reader.pages[page - 1].extract_text() or ""
+    text = "\n\n".join((p.extract_text() or "") for p in reader.pages)
+    if len(text) <= 8000:
+        return text
+    out = Path(output).expanduser() if output else src.with_suffix(".txt")
+    out.write_text(text, encoding="utf-8")
+    return f"文本过长 ({len(text)} 字)，已保存到 {out}"
+
+
+def _extract_images(path: str, output_dir: str = "") -> str:
+    """提取 PDF 内嵌图片到目录。"""
+    PdfReader, _ = _require_pypdf()
+    src = Path(path).expanduser()
+    if not src.exists():
+        raise FileNotFoundError(f"PDF 不存在: {path}")
+    reader = PdfReader(str(src))
+    out_dir = Path(output_dir).expanduser() if output_dir else src.parent / f"{src.stem}_images"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    saved = 0
+    for i, page in enumerate(reader.pages, 1):
+        for img in page.images:
+            name = img.name or f"p{i}_{saved}"
+            if "." not in Path(name).name:
+                name = f"{name}.png"
+            target = out_dir / Path(name).name
+            with open(target, "wb") as f:
+                f.write(img.data)
+            saved += 1
+    return f"✅ 提取 {saved} 张图片 → {out_dir}"
+
+
+def _watermark(path: str, watermark_text: str, output: str = "") -> str:
+    """加水印：Edge 渲染水印页（按目标页尺寸逐页生成）→ pypdf 合并。"""
+    PdfReader, PdfWriter = _require_pypdf()
+    src = Path(path).expanduser()
+    if not src.exists():
+        raise FileNotFoundError(f"PDF 不存在: {path}")
+    reader = PdfReader(str(src))
+    # 页尺寸取最大值（混尺寸 PDF 用统一页面，水印仍可读）；
+    # CSS pt = PDF pt = 1/72 inch，margin 0 时每 div 恰好一页
+    w = max(float(p.mediabox.width) for p in reader.pages)
+    h = max(float(p.mediabox.height) for p in reader.pages)
+    esc = _html_mod.escape(watermark_text)
+    pages_html = "\n".join(
+        f'<div class="page"><span class="wm">{esc}</span></div>' for _ in reader.pages
+    )
+    html_doc = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'><style>\n"
+        f"@page {{ size: {w:.0f}pt {h:.0f}pt; margin: 0; }}\n"
+        "html, body { margin: 0; padding: 0; }\n"
+        f".page {{ width: {w:.0f}pt; height: {h:.0f}pt; position: relative;"
+        " overflow: hidden; break-after: page; }\n"
+        ".page:last-child { break-after: auto; }\n"
+        ".wm { position: absolute; top: 40%; left: -15%; width: 130%; text-align: center;"
+        " transform: rotate(-35deg); font-size: 34pt; color: rgba(110,110,110,0.25);"
+        " font-family: 'Microsoft YaHei', sans-serif; white-space: nowrap; }\n"
+        "</style></head><body>\n"
+        f"{pages_html}\n</body></html>"
+    )
+
+    import tempfile
+    fd, wm_name = tempfile.mkstemp(suffix=".pdf", prefix="tianshu_wm_")
+    os.close(fd)  # 见 _html_doc_to_pdf: 打开的句柄会阻止 Edge 写入
+    wm_pdf = Path(wm_name)
+    try:
+        _html_doc_to_pdf(html_doc, wm_pdf)
+        wm_reader = PdfReader(str(wm_pdf))
+        if len(wm_reader.pages) < len(reader.pages):
+            raise RuntimeError(f"水印页数不匹配: {len(wm_reader.pages)} < {len(reader.pages)}")
+        for page, wm_page in zip(reader.pages, wm_reader.pages):
+            page.merge_page(wm_page)
+        writer = PdfWriter()
+        writer.append(reader)
+        out = _resolve_output(output, src) if output else src.with_name(f"{src.stem}_wm.pdf")
+        with open(out, "wb") as f:
+            writer.write(f)
+        return f"✅ 水印 '{watermark_text}' → {out} ({len(reader.pages)} 页)"
+    finally:
+        try:
+            wm_pdf.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+
+def _encrypt(path: str, password: str, output: str = "") -> str:
+    PdfReader, PdfWriter = _require_pypdf()
+    src = Path(path).expanduser()
+    if not src.exists():
+        raise FileNotFoundError(f"PDF 不存在: {path}")
+    reader = PdfReader(str(src))
+    writer = PdfWriter()
+    writer.append(reader)
+    writer.encrypt(password, algorithm="AES-256-R5")
+    out = _resolve_output(output, src) if output else src.with_name(f"{src.stem}_enc.pdf")
+    with open(out, "wb") as f:
+        writer.write(f)
+    return f"✅ 已加密 (AES-256) → {out}"
+
+
+def _decrypt(path: str, password: str, output: str = "") -> str:
+    PdfReader, PdfWriter = _require_pypdf()
+    src = Path(path).expanduser()
+    if not src.exists():
+        raise FileNotFoundError(f"PDF 不存在: {path}")
+    reader = PdfReader(str(src))
+    if reader.is_encrypted:
+        result = reader.decrypt(password)
+        if result == 0:
+            raise ValueError("密码错误")
+    writer = PdfWriter()
+    writer.append(reader)
+    out = _resolve_output(output, src) if output else src.with_name(f"{src.stem}_dec.pdf")
+    with open(out, "wb") as f:
+        writer.write(f)
+    return f"✅ 已解密 → {out}"
+
+
+def _form_fields(path: str) -> str:
+    PdfReader, _ = _require_pypdf()
+    reader = PdfReader(str(Path(path).expanduser()))
+    fields = reader.get_fields() or {}
+    if not fields:
+        return "该 PDF 无可填写的表单字段"
+    lines = [f"共 {len(fields)} 个表单字段:"]
+    for name, f in fields.items():
+        ftype = (f or {}).get("/FT", "?")
+        fval = (f or {}).get("/V", "")
+        lines.append(f"- {name} ({ftype}) = {fval}")
+    return "\n".join(lines)
+
+
+def _fill_form(path: str, fields: str, output: str = "") -> str:
+    """填充 AcroForm。fields: JSON 字符串 {"字段名": "值", ...}"""
+    import json
+    PdfReader, PdfWriter = _require_pypdf()
+    src = Path(path).expanduser()
+    if not src.exists():
+        raise FileNotFoundError(f"PDF 不存在: {path}")
+    values = json.loads(fields)
+    if not isinstance(values, dict):
+        raise ValueError("fields 必须是 JSON 对象")
+    reader = PdfReader(str(src))
+    existing = reader.get_fields() or {}
+    filled = 0
+    for name, val in values.items():
+        if name not in existing:
+            continue
+        try:
+            reader.update_page_form_field_values(reader.pages[0], {name: val})
+            filled += 1
+        except Exception:
+            continue
+    writer = PdfWriter()
+    writer.append(reader)
+    out = _resolve_output(output, src) if output else src.with_name(f"{src.stem}_filled.pdf")
+    with open(out, "wb") as f:
+        writer.write(f)
+    missing = [k for k in values if k not in existing]
+    msg = f"✅ 填充 {filled}/{len(values)} 字段 → {out}"
+    if missing:
+        msg += f"\n⚠ 字段不存在: {', '.join(missing)}"
+    return msg
+
+
 class PDFExportSkill(BaseSkill):
     name = "pdf-export"
-    description = "PDF 生成与工具箱: Markdown/HTML → PDF（Edge 渲染），合并/拆分/信息"
+    description = (
+        "PDF 生成与工具箱: Markdown/HTML → PDF（Edge 渲染），"
+        "合并/拆分/旋转/水印/加密/提取/表单（对标 Hermes pdf skill）"
+    )
     trigram = "地"
     trigger_keywords = [
         "生成pdf", "导出pdf", "转pdf", "md转pdf", "markdown转pdf",
         "html转pdf", "合并pdf", "拆分pdf", "pdf信息", "pdf页数",
+        "旋转pdf", "pdf文本", "提取图片", "水印", "加密pdf", "解密pdf",
+        "pdf表单", "填写表单",
     ]
 
     def get_tools(self) -> list[SkillTool]:
@@ -355,5 +555,130 @@ class PDFExportSkill(BaseSkill):
                 },
                 handler=_info,
                 permission_level=0,
+            ),
+            SkillTool(
+                name="pdf_rotate",
+                description="旋转 PDF（90 的倍数，顺时针）。",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "PDF 文件路径"},
+                        "angle": {"type": "integer", "description": "旋转角度: 90/180/270"},
+                        "output": {"type": "string", "description": "输出路径，默认 <原名>_rot<角度>.pdf"},
+                    },
+                    "required": ["path", "angle"],
+                },
+                handler=_rotate,
+                permission_level=2,
+            ),
+            SkillTool(
+                name="pdf_extract_text",
+                description=(
+                    "提取 PDF 文本。page=0 提取全部（超 8000 字自动落盘 .txt），"
+                    "page>0 提取指定页。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "PDF 文件路径"},
+                        "page": {"type": "integer", "description": "页码（1 起），默认 0=全部"},
+                        "output": {"type": "string", "description": "文本过长时保存的 .txt 路径"},
+                    },
+                    "required": ["path"],
+                },
+                handler=_extract_text,
+                permission_level=0,
+            ),
+            SkillTool(
+                name="pdf_extract_images",
+                description="提取 PDF 内嵌图片到目录。",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "PDF 文件路径"},
+                        "output_dir": {"type": "string", "description": "输出目录，默认 <原名>_images/"},
+                    },
+                    "required": ["path"],
+                },
+                handler=_extract_images,
+                permission_level=2,
+            ),
+            SkillTool(
+                name="pdf_watermark",
+                description=(
+                    "给 PDF 每页加斜向文字水印（按原页尺寸渲染，浅灰低透明度）。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "PDF 文件路径"},
+                        "watermark_text": {"type": "string", "description": "水印文字，如 机密/内部资料"},
+                        "output": {"type": "string", "description": "输出路径，默认 <原名>_wm.pdf"},
+                    },
+                    "required": ["path", "watermark_text"],
+                },
+                handler=_watermark,
+                permission_level=2,
+            ),
+            SkillTool(
+                name="pdf_encrypt",
+                description="给 PDF 加打开密码（AES-256）。",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "PDF 文件路径"},
+                        "password": {"type": "string", "description": "打开密码"},
+                        "output": {"type": "string", "description": "输出路径，默认 <原名>_enc.pdf"},
+                    },
+                    "required": ["path", "password"],
+                },
+                handler=_encrypt,
+                permission_level=2,
+            ),
+            SkillTool(
+                name="pdf_decrypt",
+                description="用密码解除 PDF 加密。",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "加密 PDF 文件路径"},
+                        "password": {"type": "string", "description": "打开密码"},
+                        "output": {"type": "string", "description": "输出路径，默认 <原名>_dec.pdf"},
+                    },
+                    "required": ["path", "password"],
+                },
+                handler=_decrypt,
+                permission_level=2,
+            ),
+            SkillTool(
+                name="pdf_form_fields",
+                description="列出 PDF 的 AcroForm 可填写字段（名称/类型/当前值）。",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "PDF 文件路径"},
+                    },
+                    "required": ["path"],
+                },
+                handler=_form_fields,
+                permission_level=0,
+            ),
+            SkillTool(
+                name="pdf_fill_form",
+                description=(
+                    "填充 PDF 表单。fields 为 JSON 字符串如 "
+                    "{\"姓名\": \"张三\", \"日期\": \"2026-08-13\"}。"
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "含表单的 PDF 文件路径"},
+                        "fields": {"type": "string", "description": "JSON 字符串: 字段名 → 值"},
+                        "output": {"type": "string", "description": "输出路径，默认 <原名>_filled.pdf"},
+                    },
+                    "required": ["path", "fields"],
+                },
+                handler=_fill_form,
+                permission_level=2,
             ),
         ]

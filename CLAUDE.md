@@ -27,7 +27,7 @@ src/tianshu/
 └── sdk/        统一数据模型
 ```
 
-62 文件 · ~17K 行 · 152 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
+62 文件 · ~18K 行 · 164 测试 · 核心依赖(httpx/pyyaml/aiosqlite/rich)
 
 ---
 
@@ -47,8 +47,8 @@ src/tianshu/
 
 - CLI: tianshu-cli (Rich渲染·流式输出·模式切换·@file引用·Spinner工具跟踪)
 - Server: tianshu-server (星群群聊·SSE流式·Markdown渲染·@自动补全)
-- 38 工具·15 Skills·4 Provider·10 模型
-- PDF 导出: Markdown/HTML → PDF (Edge headless 渲染·CJK 系统字体) + 合并/拆分/信息 (pypdf)
+- 46 工具·15 Skills·4 Provider·10 模型
+- PDF 工具箱: Markdown/HTML → PDF (Edge headless 渲染·CJK 系统字体) + 合并/拆分/旋转/水印/加密/提取/表单 (pypdf)，对标 Hermes pdf skill
 - PolicyEngine: 6条声明式策略·工具执行前拦截
 - Planner: Plan Mode 下 JSON 计划→逐步执行
 - 记忆: FTS5全文检索 + 自动画像 + Digest + Decay + Compress，对标 Honcho/Mem0

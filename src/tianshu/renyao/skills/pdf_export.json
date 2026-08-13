@@ -1,8 +1,8 @@
 {
   "name": "pdf-export",
-  "description": "PDF 生成与工具箱: Markdown/HTML → PDF（Edge 渲染），合并/拆分/信息",
+  "description": "PDF 生成与工具箱: Markdown/HTML → PDF（Edge 渲染），合并/拆分/旋转/水印/加密/提取/表单（对标 Hermes pdf skill）",
   "trigram": "地",
-  "version": 1,
+  "version": 2,
   "tools": [
     {
       "name": "md_to_pdf",
@@ -10,22 +10,11 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "source": {
-            "type": "string",
-            "description": "Markdown 内容或 .md/.txt 文件路径"
-          },
-          "output": {
-            "type": "string",
-            "description": "输出 PDF 路径，默认与源文件同名"
-          },
-          "title": {
-            "type": "string",
-            "description": "文档标题（PDF 元信息），默认取文件名"
-          }
+          "source": {"type": "string", "description": "Markdown 内容或 .md/.txt 文件路径"},
+          "output": {"type": "string", "description": "输出 PDF 路径，默认与源文件同名"},
+          "title": {"type": "string", "description": "文档标题（PDF 元信息），默认取文件名"}
         },
-        "required": [
-          "source"
-        ]
+        "required": ["source"]
       },
       "permission": 2
     },
@@ -35,18 +24,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "source": {
-            "type": "string",
-            "description": "HTML 内容或 .html/.htm 文件路径"
-          },
-          "output": {
-            "type": "string",
-            "description": "输出 PDF 路径，默认与源文件同名"
-          }
+          "source": {"type": "string", "description": "HTML 内容或 .html/.htm 文件路径"},
+          "output": {"type": "string", "description": "输出 PDF 路径，默认与源文件同名"}
         },
-        "required": [
-          "source"
-        ]
+        "required": ["source"]
       },
       "permission": 2
     },
@@ -56,22 +37,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "paths": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "PDF 文件路径列表，按合并顺序"
-          },
-          "output": {
-            "type": "string",
-            "description": "输出 PDF 路径（必填）"
-          }
+          "paths": {"type": "array", "items": {"type": "string"}, "description": "PDF 文件路径列表，按合并顺序"},
+          "output": {"type": "string", "description": "输出 PDF 路径（必填）"}
         },
-        "required": [
-          "paths",
-          "output"
-        ]
+        "required": ["paths", "output"]
       },
       "permission": 2
     },
@@ -81,18 +50,10 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "PDF 文件路径"
-          },
-          "output_dir": {
-            "type": "string",
-            "description": "输出目录，默认与源文件同目录"
-          }
+          "path": {"type": "string", "description": "PDF 文件路径"},
+          "output_dir": {"type": "string", "description": "输出目录，默认与源文件同目录"}
         },
-        "required": [
-          "path"
-        ]
+        "required": ["path"]
       },
       "permission": 2
     },
@@ -102,29 +63,127 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "PDF 文件路径"
-          }
+          "path": {"type": "string", "description": "PDF 文件路径"}
         },
-        "required": [
-          "path"
-        ]
+        "required": ["path"]
       },
       "permission": 0
+    },
+    {
+      "name": "pdf_rotate",
+      "description": "旋转 PDF（90 的倍数，顺时针）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "PDF 文件路径"},
+          "angle": {"type": "integer", "description": "旋转角度: 90/180/270"},
+          "output": {"type": "string", "description": "输出路径，默认 <原名>_rot<角度>.pdf"}
+        },
+        "required": ["path", "angle"]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_extract_text",
+      "description": "提取 PDF 文本。page=0 提取全部（超 8000 字自动落盘 .txt），page>0 提取指定页。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "PDF 文件路径"},
+          "page": {"type": "integer", "description": "页码（1 起），默认 0=全部"},
+          "output": {"type": "string", "description": "文本过长时保存的 .txt 路径"}
+        },
+        "required": ["path"]
+      },
+      "permission": 0
+    },
+    {
+      "name": "pdf_extract_images",
+      "description": "提取 PDF 内嵌图片到目录。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "PDF 文件路径"},
+          "output_dir": {"type": "string", "description": "输出目录，默认 <原名>_images/"}
+        },
+        "required": ["path"]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_watermark",
+      "description": "给 PDF 每页加斜向文字水印（按原页尺寸渲染，浅灰低透明度）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "PDF 文件路径"},
+          "watermark_text": {"type": "string", "description": "水印文字，如 机密/内部资料"},
+          "output": {"type": "string", "description": "输出路径，默认 <原名>_wm.pdf"}
+        },
+        "required": ["path", "watermark_text"]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_encrypt",
+      "description": "给 PDF 加打开密码（AES-256）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "PDF 文件路径"},
+          "password": {"type": "string", "description": "打开密码"},
+          "output": {"type": "string", "description": "输出路径，默认 <原名>_enc.pdf"}
+        },
+        "required": ["path", "password"]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_decrypt",
+      "description": "用密码解除 PDF 加密。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "加密 PDF 文件路径"},
+          "password": {"type": "string", "description": "打开密码"},
+          "output": {"type": "string", "description": "输出路径，默认 <原名>_dec.pdf"}
+        },
+        "required": ["path", "password"]
+      },
+      "permission": 2
+    },
+    {
+      "name": "pdf_form_fields",
+      "description": "列出 PDF 的 AcroForm 可填写字段（名称/类型/当前值）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "PDF 文件路径"}
+        },
+        "required": ["path"]
+      },
+      "permission": 0
+    },
+    {
+      "name": "pdf_fill_form",
+      "description": "填充 PDF 表单。fields 为 JSON 字符串如 {\"姓名\": \"张三\", \"日期\": \"2026-08-13\"}。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "description": "含表单的 PDF 文件路径"},
+          "fields": {"type": "string", "description": "JSON 字符串: 字段名 → 值"},
+          "output": {"type": "string", "description": "输出路径，默认 <原名>_filled.pdf"}
+        },
+        "required": ["path", "fields"]
+      },
+      "permission": 2
     }
   ],
   "trigger_keywords": [
-    "生成pdf",
-    "导出pdf",
-    "转pdf",
-    "md转pdf",
-    "markdown转pdf",
-    "html转pdf",
-    "合并pdf",
-    "拆分pdf",
-    "pdf信息",
-    "pdf页数"
+    "生成pdf", "导出pdf", "转pdf", "md转pdf", "markdown转pdf",
+    "html转pdf", "合并pdf", "拆分pdf", "pdf信息", "pdf页数",
+    "旋转pdf", "pdf文本", "提取图片", "水印", "加密pdf", "解密pdf",
+    "pdf表单", "填写表单"
   ],
   "handler": "tianshu.renyao.skills.pdf_export:PDFExportSkill"
 }

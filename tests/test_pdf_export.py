@@ -11,12 +11,20 @@ import pytest
 
 from tianshu.renyao.skills.pdf_export import (
     PDFExportSkill,
+    _decrypt,
+    _encrypt,
+    _extract_images,
+    _extract_text,
+    _fill_form,
     _find_browser,
+    _form_fields,
     _html_doc_to_pdf,
     _inject_css,
     _info,
     _merge,
+    _rotate,
     _split,
+    _watermark,
     _wrap_html,
     html_to_pdf_file,
     md_to_html,
@@ -146,12 +154,108 @@ class TestPdfToolbox:
             _merge([str(a), str(tmp_path / "不存在.pdf")], str(tmp_path / "x.pdf"))
 
 
+# ── 工具箱扩展: 旋转/提取/水印/加密/表单 ───────────────────────────────────
+
+@needs_edge
+class TestPdfToolboxExtended:
+    def test_rotate(self, two_pdfs):
+        a, _ = two_pdfs
+        msg = _rotate(str(a), 90)
+        assert "旋转 90°" in msg
+        from pypdf import PdfReader
+        reader = PdfReader(str(a).replace(".pdf", "_rot90.pdf"))
+        assert len(reader.pages) == 1
+
+    def test_rotate_bad_angle(self, two_pdfs):
+        a, _ = two_pdfs
+        with pytest.raises(ValueError):
+            _rotate(str(a), 45)
+
+    def test_extract_text(self, two_pdfs):
+        a, _ = two_pdfs
+        text = _extract_text(str(a))
+        assert "# A" in text or "第一份" in text
+
+    def test_extract_text_single_page(self, two_pdfs):
+        a, _ = two_pdfs
+        text = _extract_text(str(a), page=1)
+        assert len(text) > 0
+
+    def test_extract_text_page_out_of_range(self, two_pdfs):
+        a, _ = two_pdfs
+        with pytest.raises(ValueError):
+            _extract_text(str(a), page=99)
+
+    def test_extract_images_no_images(self, two_pdfs, tmp_path):
+        a, _ = two_pdfs
+        msg = _extract_images(str(a), str(tmp_path / "imgs"))
+        assert "0 张" in msg
+
+    def test_watermark(self, two_pdfs, tmp_path):
+        a, _ = two_pdfs
+        out = tmp_path / "wm.pdf"
+        msg = _watermark(str(a), "机密", str(out))
+        assert out.exists()
+        assert "1 页" in msg
+        from pypdf import PdfReader
+        assert len(PdfReader(str(out)).pages) == 1
+        # 水印合并后文本仍可提取（内容未被破坏）
+        text = "".join((p.extract_text() or "") for p in PdfReader(str(out)).pages)
+        assert "第一份" in text or "机密" in text
+
+    def test_watermark_multipage(self, tmp_path):
+        md = "\n\n".join(f"# 第{i}章\n\n段落内容。" * 30 for i in range(1, 6))
+        src = md_to_pdf_file(md, tmp_path / "multi.pdf")
+        from pypdf import PdfReader
+        n = len(PdfReader(str(src)).pages)
+        out = tmp_path / "multi_wm.pdf"
+        _watermark(str(src), "内部资料", str(out))
+        assert len(PdfReader(str(out)).pages) == n
+
+    def test_encrypt_decrypt_roundtrip(self, two_pdfs, tmp_path):
+        a, _ = two_pdfs
+        enc = tmp_path / "enc.pdf"
+        _encrypt(str(a), "secret123", str(enc))
+        from pypdf import PdfReader
+        reader = PdfReader(str(enc))
+        assert reader.is_encrypted
+        # 解密
+        dec = tmp_path / "dec.pdf"
+        _decrypt(str(enc), "secret123", str(dec))
+        dec_reader = PdfReader(str(dec))
+        assert not dec_reader.is_encrypted
+        assert "第一份" in dec_reader.pages[0].extract_text()
+
+    def test_decrypt_wrong_password(self, two_pdfs, tmp_path):
+        a, _ = two_pdfs
+        enc = tmp_path / "enc2.pdf"
+        _encrypt(str(a), "secret123", str(enc))
+        with pytest.raises(ValueError):
+            _decrypt(str(enc), "wrong", str(tmp_path / "x.pdf"))
+
+    def test_form_fields_empty_on_plain_pdf(self, two_pdfs):
+        a, _ = two_pdfs
+        msg = _form_fields(str(a))
+        assert "无可填写" in msg
+
+    def test_fill_form_no_fields(self, two_pdfs, tmp_path):
+        a, _ = two_pdfs
+        msg = _fill_form(str(a), '{"姓名": "张三"}', str(tmp_path / "f.pdf"))
+        assert "0/1" in msg
+        assert "姓名" in msg  # 报告不存在的字段
+
+
 # ── Skill 注册 ────────────────────────────────────────────────────────────
 
 class TestPdfSkill:
     def test_tools_registered(self):
         names = [t.name for t in PDFExportSkill().get_tools()]
-        assert names == ["md_to_pdf", "html_to_pdf", "pdf_merge", "pdf_split", "pdf_info"]
+        assert names == [
+            "md_to_pdf", "html_to_pdf", "pdf_merge", "pdf_split", "pdf_info",
+            "pdf_rotate", "pdf_extract_text", "pdf_extract_images",
+            "pdf_watermark", "pdf_encrypt", "pdf_decrypt",
+            "pdf_form_fields", "pdf_fill_form",
+        ]
 
     def test_loader_includes_pdf_export(self):
         from tianshu.renyao.skills.loader import SkillLoader

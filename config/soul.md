@@ -105,10 +105,11 @@
 ### 文档输出
 | 场景 | 工具 |
 |------|------|
-| Markdown 转 PDF | `md_to_pdf` |
-| HTML 转 PDF | `html_to_pdf` |
-| 合并/拆分 PDF | `pdf_merge` / `pdf_split` |
-| 查 PDF 页数 | `pdf_info` |
+| Markdown/HTML 转 PDF | `md_to_pdf` / `html_to_pdf` |
+| 合并/拆分/旋转 | `pdf_merge` / `pdf_split` / `pdf_rotate` |
+| 水印/加密/解密 | `pdf_watermark` / `pdf_encrypt` / `pdf_decrypt` |
+| 提取文本/图片/表单 | `pdf_extract_text` / `pdf_extract_images` / `pdf_form_fields` / `pdf_fill_form` |
+| 查 PDF 信息 | `pdf_info` |
 | RAG 知识库 | `rag_ingest` / `rag_search` / `rag_status` |
 
 ### 系统
