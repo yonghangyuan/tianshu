@@ -31,3 +31,5 @@ _test_*
 docs/COMPETITION_PAPER.md
 F:/tianshu_dev/
 *.epub
+tianshu.db-shm
+tianshu.db-wal
