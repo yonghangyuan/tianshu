@@ -200,12 +200,14 @@
 ## 六、Android 端 (独立仓库)
 
 ### AND-001 — Android APP 跑通完整链路
-- **状态**: 🔵 进行中
-- **创建**: 2026-08-06 | **更新**: 2026-08-10
+- **状态**: 🔵 进行中（代码侧已修复，待真机验证）
+- **创建**: 2026-08-06 | **更新**: 2026-08-13
 - **位置**: `F:\tianshu_dev\android\` (gitignored，不在主仓库)
 - **当前**: Kotlin/Gradle KTS · LoginActivity(原生登录+token) · MainActivity(WebView→chat.html) · 本地 HTML 回退页
-- **阻塞**: 硬编码客户端凭据(`zhuzhe/123456`)需替换为服务器 `/login` 流程；需验证 WebView→服务器完整链路
-- **预计**: 2-3 天
+- **8/13 修复**: ① 移除硬编码 `zhuzhe/123456` 客户端校验——凭据全交服务器 `/login`（401 也读错误体）；② MainActivity 用 CookieManager 注入 `tianshu_token` 到 WebView cookie jar——页面内 fetch 自动携带凭证（适配 8/13 /run 鉴权修复）；③ 顺手修 onBackPressed 的 ClassCastException（findViewById 把 FrameLayout 强转 WebView 必崩）
+- **8/13 构建**: `app-debug.apk` (3.15 MB) gradlew assembleDebug 成功
+- **待办**: 真机/模拟器安装验证完整链路（服务器密码以 TIANSHU_LOGIN_PASSWORD 为准）
+- **预计**: 剩余 1 天（验证+上线）
 
 ---
 
