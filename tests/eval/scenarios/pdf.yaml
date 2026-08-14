@@ -1,0 +1,34 @@
+# PDF 工具箱评测（fixtures/sample.pdf 为 Edge 渲染的真实验证文档）
+
+- name: "PDF 页数查询"
+  description: "问 PDF 页数应使用 pdf_info"
+  input: "tests/eval/fixtures/sample.pdf 有几页"
+  tags: [pdf, info]
+  expect:
+    tools:
+      - name: pdf_info
+        args_contains: {path: "tests/eval/fixtures/sample.pdf"}
+    max_tools: 2
+    max_latency_ms: 10000
+
+- name: "PDF 文本提取"
+  description: "提取 PDF 内容用 pdf_extract_text"
+  input: "把 tests/eval/fixtures/sample.pdf 的文字提取出来"
+  tags: [pdf, extract]
+  expect:
+    tools:
+      - name: pdf_extract_text
+        args_contains: {path: "tests/eval/fixtures/sample.pdf"}
+    max_tools: 2
+    max_latency_ms: 10000
+
+- name: "PDF 表单字段检查"
+  description: "检查 PDF 可填字段用 pdf_form_fields"
+  input: "这个 PDF 有哪些可填写的字段"
+  tags: [pdf, form]
+  expect:
+    tools:
+      - name: pdf_form_fields
+        args_contains: {path: "tests/eval/fixtures/sample.pdf"}
+    max_tools: 2
+    max_latency_ms: 10000

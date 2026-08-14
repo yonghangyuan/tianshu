@@ -369,14 +369,16 @@ def _watermark(path: str, watermark_text: str, output: str = "") -> str:
         wm_reader = PdfReader(str(wm_pdf))
         if len(wm_reader.pages) < len(reader.pages):
             raise RuntimeError(f"水印页数不匹配: {len(wm_reader.pages)} < {len(reader.pages)}")
-        for page, wm_page in zip(reader.pages, wm_reader.pages):
-            page.merge_page(wm_page)
+        # 先 append 到 writer 再 merge——直接在 reader 页上 merge 会触发
+        # pypdf 弃用警告 (replace_contents 对非 writer 页不可靠)
         writer = PdfWriter()
         writer.append(reader)
+        for page, wm_page in zip(writer.pages, wm_reader.pages):
+            page.merge_page(wm_page)
         out = _resolve_output(output, src) if output else src.with_name(f"{src.stem}_wm.pdf")
         with open(out, "wb") as f:
             writer.write(f)
-        return f"✅ 水印 '{watermark_text}' → {out} ({len(reader.pages)} 页)"
+        return f"✅ 水印 '{watermark_text}' → {out} ({len(writer.pages)} 页)"
     finally:
         try:
             wm_pdf.unlink(missing_ok=True)

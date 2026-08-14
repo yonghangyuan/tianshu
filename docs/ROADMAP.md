@@ -235,6 +235,8 @@
 | MCP 工具注入 | 动态工具列表注入 system prompt | 08-12 |
 | Agent 评测框架 | YAML 场景 + mock LLM 评分 | 08-12 |
 | PDF 工具箱 | Edge headless print-to-pdf + pypdf (13 工具: 生成/合并/拆分/旋转/水印/加密/表单) | 08-13 |
+| 测试套件清理 | sandbox 超时 transport 泄漏 + pypdf 弃用警告 → 207 tests 0 warnings | 08-14 |
+| 评测扩充 | 14 场景 (rag/pdf/starbus) + runner --mock 修复 (one-shot 工具调用/chat_stream/参数捕获) | 08-14 |
 
 ---
 

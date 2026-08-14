@@ -102,18 +102,26 @@ class LocalSandbox(SandboxBase):
                 cwd=work_dir,
                 env={**os.environ, "PYTHONIOENCODING": "utf-8"},
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=timeout,
-            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                # 超时必须 kill + 收尸——否则 transport 泄漏，
+                # GC 时才报 "Event loop is closed"
+                proc.kill()
+                try:
+                    await proc.communicate()
+                except Exception:
+                    pass
+                return SandboxResult("", f"Timeout after {timeout}s", -1, time.time() - t0)
             return SandboxResult(
                 stdout=stdout.decode(encoding, errors="replace")[:5000],
                 stderr=stderr.decode(encoding, errors="replace")[:2000],
                 exit_code=proc.returncode or 0,
                 elapsed=time.time() - t0,
             )
-        except asyncio.TimeoutError:
-            return SandboxResult("", f"Timeout after {timeout}s", -1, time.time() - t0)
         except Exception as e:
             return SandboxResult("", f"{type(e).__name__}: {e}", -1, time.time() - t0)
 
@@ -190,31 +198,39 @@ class DockerSandbox(SandboxBase):
         import time
         t0 = time.time()
         try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    "docker", "run", "--rm",
-                    "--network", "none",       # no network
-                    "--memory", "256m",         # limit memory
-                    "--cpus", "1",              # limit CPU
-                    "--read-only",              # read-only rootfs
-                    "--tmpfs", "/tmp:exec",     # writable /tmp
-                    "-v", f"{docker_cwd}:/workspace:ro",
-                    self._image,
-                    "sh", "-c", command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ),
-                timeout=timeout,
+            proc = await asyncio.create_subprocess_exec(
+                "docker", "run", "--rm",
+                "--network", "none",       # no network
+                "--memory", "256m",         # limit memory
+                "--cpus", "1",              # limit CPU
+                "--read-only",              # read-only rootfs
+                "--tmpfs", "/tmp:exec",     # writable /tmp
+                "-v", f"{docker_cwd}:/workspace:ro",
+                self._image,
+                "sh", "-c", command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                # 超时必须 kill + 收尸——否则 transport 泄漏 (同 LocalSandbox)
+                proc.kill()
+                try:
+                    await proc.communicate()
+                except Exception:
+                    pass
+                return SandboxResult("", f"Timeout {timeout}s", -1, time.time() - t0)
             return SandboxResult(
                 stdout=stdout.decode("utf-8", errors="replace")[:5000],
                 stderr=stderr.decode("utf-8", errors="replace")[:2000],
                 exit_code=proc.returncode or 0,
                 elapsed=time.time() - t0,
             )
-        except asyncio.TimeoutError:
-            return SandboxResult("", f"Timeout {timeout}s", -1, time.time() - t0)
+        except FileNotFoundError:
+            return SandboxResult("", "docker not found", -1, time.time() - t0)
 
     async def run_python(self, code: str, timeout: int = 30) -> SandboxResult:
         return await self.run(f"python -c '{code}'", timeout=timeout)

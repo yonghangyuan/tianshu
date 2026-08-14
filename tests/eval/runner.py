@@ -77,10 +77,11 @@ class EvalResult:
 class EvalRunner:
     """评测运行器。"""
 
-    def __init__(self, scenarios_dir: str | Path = ""):
+    def __init__(self, scenarios_dir: str | Path = "", force_mock: bool = False):
         if not scenarios_dir:
             scenarios_dir = Path(__file__).parent / "scenarios"
         self._dir = Path(scenarios_dir)
+        self._force_mock = force_mock
 
     def load_scenarios(self) -> list[EvalScenario]:
         """加载所有评测场景。"""
@@ -141,8 +142,10 @@ class EvalRunner:
             from tianshu.core.service import AgentCore
             from tianshu.sdk.models import AgentRequest
 
-            # 尝试加载真实 provider，失败则用 mock
+            # 尝试加载真实 provider，失败则用 mock（--mock 强制 mock）
             try:
+                if self._force_mock:
+                    raise RuntimeError("forced mock mode")
                 registry = load_providers("config/providers.yaml")
                 routing = load_routing_config("config/providers.yaml")
             except Exception:
@@ -154,20 +157,58 @@ class EvalRunner:
                     provider_name = "mock"
                     model_id = "mock-1"
 
-                    async def chat(self, messages, tools=None, **kw):
-                        tool_name = scenario.expected_tools[0]["name"] if scenario.expected_tools else ""
-                        tool_args = scenario.expected_tools[0].get("args_contains", {}) if scenario.expected_tools else {}
+                    def __init__(self):
+                        self._calls = 0
+
+                    async def is_available(self) -> bool:
+                        return True
+
+                    async def chat(self, messages, tools=None, temperature=0.7,
+                                  max_tokens=4096, **kw):
+                        self._calls += 1
                         tool_calls = []
-                        if tool_name:
-                            tool_calls = [type('TC', (), {
-                                'id': 'call_1', 'name': tool_name,
-                                'arguments': tool_args,
-                                'function': type('F', (), {'name': tool_name, 'arguments': json.dumps(tool_args)})()
-                            })()]
+                        if self._calls == 1:
+                            tool_name = scenario.expected_tools[0]["name"] if scenario.expected_tools else ""
+                            tool_args = scenario.expected_tools[0].get("args_contains", {}) if scenario.expected_tools else {}
+                            if tool_name:
+                                tool_calls = [type('TC', (), {
+                                    'id': 'call_1', 'name': tool_name,
+                                    'arguments': tool_args,
+                                    'function': type('F', (), {'name': tool_name, 'arguments': json.dumps(tool_args)})()
+                                })()]
+                        mock_content = scenario.input + " 的答案是测试响应。"
+                        mock_content += "".join(scenario.output_must_contain)
                         return ProviderResponse(
-                            content=scenario.input + " 的答案是测试响应。",
+                            content=mock_content,
                             tool_calls=tool_calls,
                             usage=type('U', (), {'prompt_tokens': 100, 'completion_tokens': 50})(),
+                        )
+
+                    async def chat_stream(self, messages, tools=None, **kw):
+                        from tianshu.diyao.providers.base import (
+                            ProviderStreamChunk, TokenUsage,
+                        )
+                        self._calls += 1
+                        tool_deltas = []
+                        if self._calls == 1:
+                            tool_name = scenario.expected_tools[0]["name"] if scenario.expected_tools else ""
+                            tool_args = scenario.expected_tools[0].get("args_contains", {}) if scenario.expected_tools else {}
+                            if tool_name:
+                                args_json = json.dumps(tool_args, ensure_ascii=False)
+                                tool_deltas = [{
+                                    "index": 0, "id": "call_1", "name": tool_name,
+                                    "arguments": args_json,
+                                    "function": {"name": tool_name, "arguments": args_json},
+                                }]
+                        # mock 内容携带期望关键词——保证 output_contains 检查
+                        # 在 mock 模式下闭环（真实模式由真实 LLM 产出关键词）
+                        mock_content = scenario.input + " 的答案是测试响应。"
+                        mock_content += "".join(scenario.output_must_contain)
+                        yield ProviderStreamChunk(
+                            delta_content=mock_content,
+                            tool_call_deltas=tool_deltas,
+                            finish_reason="tool_calls" if tool_deltas else "stop",
+                            usage=TokenUsage(prompt_tokens=100, completion_tokens=50),
                         )
 
                 registry = ProviderRegistry()
@@ -175,12 +216,38 @@ class EvalRunner:
                 routing = RoutingConfig(rules=[], fallback="mock/mock-1")
 
             core = AgentCore()
-            core.setup(registry, routing, "Test system prompt", db_path=":memory:")
+            # 用临时文件 DB——":memory:" 每条连接独立内存库，审计表不可见
+            import tempfile as _tf
+            db_path = str(Path(_tf.gettempdir()) / f"tianshu_eval_{int(time.time()*1000)}.db")
+            core.setup(registry, routing, "Test system prompt", db_path=db_path)
 
+            # 用 run_stream 捕获 ToolCallStart 事件——带真实 arguments
             import asyncio as _asyncio
-            resp = _asyncio.run(core.run(AgentRequest(input=scenario.input, task_type="conversation")))
-            result.output = resp.content or ""
-            result.tool_calls = resp.tool_calls or []
+            from tianshu.sdk.models import (
+                AgentContext, ContentDelta, StreamError, ToolCallStart,
+            )
+
+            content_buf: list[str] = []
+            tool_calls: list[dict] = []
+
+            async def _run():
+                async for event in core.run_stream(
+                    AgentRequest(input=scenario.input, task_type="conversation"),
+                    ctx=AgentContext(session_id="eval"),
+                ):
+                    if isinstance(event, ToolCallStart):
+                        tool_calls.append({
+                            "name": event.tool_name,
+                            "arguments": event.tool_args or {},
+                        })
+                    elif isinstance(event, ContentDelta):
+                        content_buf.append(event.text)
+                    elif isinstance(event, StreamError):
+                        raise RuntimeError(event.message)
+
+            _asyncio.run(_run())
+            result.output = "".join(content_buf)
+            result.tool_calls = tool_calls
             result.latency_ms = int((time.time() - t0) * 1000)
 
         except Exception as e:
@@ -261,7 +328,22 @@ class EvalRunner:
 
 
 if __name__ == "__main__":
-    runner = EvalRunner()
+    force_mock = "--mock" in sys.argv
+    target = next((a for a in sys.argv[1:] if not a.startswith("--")), "")
+    runner = EvalRunner(force_mock=force_mock)
+    # 支持指定单个场景文件: python -m tests.eval.runner social.yaml
+    if target and Path(target).exists():
+        runner._dir = Path(target).parent
+        import types
+        orig_load = runner.load_scenarios
+        def _load_filtered():
+            return [s for s in orig_load() if s.file.endswith(Path(target).name)]
+        runner.load_scenarios = _load_filtered
+    elif target:
+        print(f"场景文件不存在: {target}")
+        sys.exit(2)
+    mode = "MOCK" if force_mock else "REAL"
+    print(f"运行模式: {mode}\n")
     results = runner.run_all()
     failed = sum(1 for r in results if not r.passed)
     sys.exit(1 if failed > 0 else 0)

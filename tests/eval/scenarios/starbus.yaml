@@ -1,0 +1,33 @@
+# 星群通信总线评测（内存总线，无副作用）
+
+- name: "点对点发消息"
+  description: "Agent 间通信应使用 send_message 工具"
+  input: "给 analyst 发个消息，说数据已就绪"
+  tags: [starbus, direct]
+  expect:
+    tools:
+      - name: send_message
+        args_contains: {to: "analyst", content: "数据已就绪"}
+    max_tools: 2
+    max_latency_ms: 10000
+
+- name: "收件箱读取"
+  description: "查看自己收到的消息用 read_inbox"
+  input: "谁给我发消息了"
+  tags: [starbus, inbox]
+  expect:
+    tools:
+      - name: read_inbox
+    max_tools: 2
+    max_latency_ms: 10000
+
+- name: "共享记忆板写入"
+  description: "跨 Agent 共享结论用 post_board"
+  input: "把结论'方案A可行'记到共享板上"
+  tags: [starbus, board]
+  expect:
+    tools:
+      - name: post_board
+        args_contains: {key: "结论", content: "方案A可行"}
+    max_tools: 2
+    max_latency_ms: 10000

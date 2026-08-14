@@ -1,0 +1,22 @@
+# RAG 私有知识库评测
+
+- name: "知识库语义检索"
+  description: "Agent 应使用 rag_search 混合检索知识库"
+  input: "帮我查一下知识库里关于三爻架构的内容"
+  tags: [rag, search]
+  expect:
+    tools:
+      - name: rag_search
+        args_contains: {query: "三爻架构", collection: "default"}
+    max_tools: 3
+    max_latency_ms: 15000
+
+- name: "知识库状态查询"
+  description: "用户问知识库状态时用 rag_status"
+  input: "我的知识库里有什么"
+  tags: [rag, status]
+  expect:
+    tools:
+      - name: rag_status
+    max_tools: 2
+    max_latency_ms: 10000
