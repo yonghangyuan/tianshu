@@ -50,6 +50,22 @@ class FileOpsSkill(BaseSkill):
                 permission_level=2,  # WRITE
             ),
             SkillTool(
+                name="edit_file",
+                description="Line-precise edit: replace old_string with new_string in a file. Prefer this over write_file for surgical changes. old_string must match exactly once (or use replace_all).",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path to edit"},
+                        "old_string": {"type": "string", "description": "Exact text to find and replace"},
+                        "new_string": {"type": "string", "description": "Replacement text"},
+                        "replace_all": {"type": "boolean", "description": "Replace all occurrences (default false)", "default": False},
+                    },
+                    "required": ["path", "old_string", "new_string"],
+                },
+                handler=self._edit_file,
+                permission_level=2,  # WRITE
+            ),
+            SkillTool(
                 name="list_dir",
                 description="List files and directories in a path. Returns names, sizes, and types.",
                 parameters={
@@ -184,6 +200,60 @@ class FileOpsSkill(BaseSkill):
         size = p.stat().st_size
         verb = "已覆盖" if existed else "已创建"
         return f"✅ {verb}: {p}\n   {len(content)} 字符, {_format_size(size)}"
+
+    async def _edit_file(
+        self, path: str, old_string: str, new_string: str, replace_all: bool = False, **kwargs
+    ) -> str:
+        """行级精确替换——外科手术式修改，避免整文件重写。"""
+        p = Path(path).expanduser().resolve()
+        if not p.exists():
+            return f"❌ 文件不存在: {p}"
+        if p.is_dir():
+            return f"❌ 路径是目录而非文件: {p}"
+
+        # 读文件：utf-8 优先，失败回退 gbk（Windows 常见编码）
+        # newline="" 不做换行转换——LF/CRLF 原样读回，行级编辑不弄乱换行
+        encoding = "utf-8"
+        try:
+            with open(p, "r", encoding="utf-8", newline="") as f:
+                text = f.read()
+        except UnicodeDecodeError:
+            try:
+                with open(p, "r", encoding="gbk", errors="replace", newline="") as f:
+                    text = f.read()
+                encoding = "gbk"
+            except Exception as e:
+                return f"❌ 读取失败: {e}"
+
+        count = text.count(old_string)
+        if count == 0:
+            snippet = old_string[:50] + ("…" if len(old_string) > 50 else "")
+            return (
+                f"❌ 未找到目标文本: {snippet}\n"
+                f"提示: 用 read_file 核对文件内容（注意空格/换行/转义）"
+            )
+        if count > 1 and not replace_all:
+            return (
+                f"❌ 找到 {count} 处匹配，需要唯一匹配。\n"
+                f"提示: 提供更长的 old_string 上下文，或设置 replace_all=true"
+            )
+
+        new_text = text.replace(old_string, new_string) if replace_all else \
+            text.replace(old_string, new_string, 1)
+        if new_text == text:
+            return "(无变更)"
+
+        try:
+            with open(p, "w", encoding=encoding, newline="") as f:
+                f.write(new_text)
+        except Exception as e:
+            return f"❌ 写入失败: {e}"
+
+        # 返回 diff 供用户查看
+        from tianshu.diyao.diff import compute_diff
+        diff = compute_diff(text, new_text, str(p))
+        n = new_text.count(new_string) if new_string else 0
+        return f"✅ 已替换 {n if replace_all else 1} 处: {p}\n--- Diff ---\n{diff}"
 
     async def _list_dir(
         self, path: str = ".", pattern: str = "", max_items: int = 50, **kwargs

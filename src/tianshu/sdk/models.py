@@ -199,6 +199,7 @@ class AgentContext:
     turns: list[AgentTurn] = field(default_factory=list)
     session_id: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    shell: Any = field(default=None, repr=False)  # 持久 shell 句柄（minimal 预设）— 不入库
 
 
 # ═══════════════════════════════════════════════════════════════════════════

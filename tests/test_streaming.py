@@ -23,6 +23,7 @@ from tianshu.sdk.models import (
     ContentDelta,
     ReasoningDelta,
     ToolCallStart,
+    ToolCallConfirm,
     ToolCallResult,
     StreamDone,
     StreamError,
@@ -341,3 +342,154 @@ class TestRunStream:
         assert len(events) == 1
         assert isinstance(events[0], StreamError)
         assert "not set up" in events[0].message
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 预设系统 × run_stream() 集成测试
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _sse_tool_call(name: str, args: dict, call_id: str = "call_001") -> list[str]:
+    """构造一次工具调用的 canned SSE 行。"""
+    d1 = {"id": "chatcmpl-9", "object": "chat.completion.chunk",
+          "choices": [{"index": 0, "delta": {"tool_calls": [
+              {"index": 0, "id": call_id, "type": "function",
+               "function": {"name": name, "arguments": ""}}]}}]}
+    d2 = {"id": "chatcmpl-9", "object": "chat.completion.chunk",
+          "choices": [{"index": 0, "delta": {"tool_calls": [
+              {"index": 0, "function": {"arguments": json.dumps(args, ensure_ascii=False)}}]}}]}
+    d3 = {"id": "chatcmpl-9", "object": "chat.completion.chunk",
+          "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}
+    return [f'data: {json.dumps(d, ensure_ascii=False)}\n\n' for d in (d1, d2, d3)] + ["data: [DONE]\n\n"]
+
+
+class _SeqProvider(DummyProvider):
+    """按调用次序重放不同 SSE 组：第一次工具调用，之后纯文本。"""
+
+    def __init__(self, *line_sets: list[str]):
+        super().__init__(line_sets[0] if line_sets else [])
+        self._sets = list(line_sets)
+        self._i = 0
+
+    async def chat_stream(self, messages, tools=None, **kw):
+        self._i += 1
+        idx = min(self._i - 1, len(self._sets) - 1)
+        saved = self._sse_lines
+        self._sse_lines = self._sets[idx]
+        try:
+            async for chunk in super().chat_stream(messages, tools=tools, **kw):
+                yield chunk
+        finally:
+            self._sse_lines = saved
+
+
+class _FakeShell:
+    """极简模式测试用的假持久 shell——不 spawn 真 cmd。"""
+    def __init__(self):
+        self.commands = []
+
+    async def run(self, command, timeout=60):
+        self.commands.append(command)
+        return "shell-out"
+
+
+class TestPresetStreaming:
+    """预设轴 × 流式循环集成测试。"""
+
+    def _make_core(self, provider) -> "object":
+        from tianshu.core.service import AgentCore
+        core = AgentCore()
+        core._ready = True
+        core._registry = MagicMock()
+        core._registry.list_all.return_value = []
+        core._system_prompt = ""
+
+        core._router = MagicMock()
+        core._router.route = AsyncMock(return_value=(provider, "test-model", 1))
+        core._router.route_direct.return_value = (provider, "test-model", 1)
+
+        core._audit = MagicMock()
+        core._audit.generate_id.return_value = "D000001"
+        core._audit.capture_snapshot.return_value = []
+        core._audit.record = AsyncMock()
+
+        core._skills = MagicMock()
+        core._skills.loader.get_all_tools.return_value = []
+        core._skills.observe_turn = MagicMock()
+        core._skills.evolve_skills = AsyncMock(return_value=[])
+        core._skills.execute = AsyncMock(return_value="executed")
+
+        core._memory = MagicMock()
+        core._memory.auto_profile = AsyncMock(return_value=[])
+        core._memory.remember = AsyncMock()
+        core._memory.prefetch = AsyncMock(return_value="")
+        core._memory.digest = AsyncMock(return_value=[])
+
+        core._evolution_counter = 0
+        return core
+
+    @pytest.mark.asyncio
+    async def test_minimal_preset_skips_confirm(self):
+        """minimal 预设：WRITE 工具直接执行，无 ToolCallConfirm。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.sdk.models import AgentRequest, AgentContext
+
+        provider = _SeqProvider(_sse_tool_call("shell_exec", {"command": "echo hi"}), SSE_CHUNKS)
+        core = self._make_core(provider)
+        core._preset = "minimal"
+
+        ctx = AgentContext(session_id="t-minimal")
+        ctx.shell = _FakeShell()
+
+        events = []
+        async for event in core.run_stream(AgentRequest(input="跑命令"), ctx=ctx):
+            events.append(event)
+
+        assert not any(isinstance(e, ToolCallConfirm) for e in events)
+        results = [e for e in events if isinstance(e, ToolCallResult)]
+        assert results, "应有工具结果事件"
+        assert results[0].success is True
+        assert "shell-out" in results[0].output
+        assert ctx.shell.commands == ["echo hi"]
+
+    @pytest.mark.asyncio
+    async def test_code_preset_run_code_end_to_end(self):
+        """code 预设：run_code 走真实 PTC 子进程，submit 值返回。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.sdk.models import AgentRequest
+
+        provider = _SeqProvider(
+            _sse_tool_call("run_code", {"code": 'submit("PTC_OK")'}), SSE_CHUNKS
+        )
+        core = self._make_core(provider)
+        core._preset = "code"
+        core._automode = True  # auto + code = 免确认（矩阵）
+
+        events = []
+        async for event in core.run_stream(AgentRequest(input="用代码执行")):
+            events.append(event)
+
+        results = [e for e in events if isinstance(e, ToolCallResult)]
+        assert results, "应有工具结果事件"
+        assert results[0].success is True
+        assert "PTC_OK" in results[0].output
+
+    @pytest.mark.asyncio
+    async def test_standard_preset_confirm_gate_regression(self):
+        """standard 预设：WRITE 工具仍弹确认——确认后执行成功。"""
+        from tianshu.core.service import AgentCore
+        from tianshu.sdk.models import AgentRequest
+
+        provider = _SeqProvider(_sse_tool_call("shell_exec", {"command": "echo hi"}), SSE_CHUNKS)
+        core = self._make_core(provider)  # 默认 standard
+
+        events = []
+        async for event in core.run_stream(AgentRequest(input="跑命令")):
+            events.append(event)
+            if isinstance(event, ToolCallConfirm):
+                core.confirm_tool(True)  # 模拟用户确认
+
+        confirms = [e for e in events if isinstance(e, ToolCallConfirm)]
+        assert confirms, "standard 下 WRITE 工具应弹确认"
+        results = [e for e in events if isinstance(e, ToolCallResult)]
+        assert results and results[0].success is True

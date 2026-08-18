@@ -120,6 +120,23 @@ class TestSessionStore:
         finally:
             self._cleanup_store(store, db_path)
 
+    def test_shell_handle_not_serialized(self):
+        """持久 shell 句柄不入库——resume 后为 None，由极简模式惰性重建。"""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        store = None
+        try:
+            store = SessionStore(db_path)
+            ctx = AgentContext(session_id="with-shell", shell=object())
+            store.save(ctx)
+
+            loaded = store.load("with-shell")
+            assert loaded is not None
+            assert loaded.shell is None
+        finally:
+            self._cleanup_store(store, db_path)
+
     def test_update_existing(self):
         """对已存在的会话 save 应更新而非新增。"""
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:

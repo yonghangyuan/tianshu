@@ -100,6 +100,7 @@ class AgentCore:
         self._permission_whitelist: set = set()  # "始终允许"的白名单
         self._hooks: dict = {"pre_tool": [], "post_tool": []}  # Hook系统
         self._mode: str = "normal"       # normal / plan / auto
+        self._preset: str = "standard"   # standard / minimal / code (PTC) — 与 mode 正交
         self._policy_engine: Any = None  # PolicyEngine
         self._mcp: Any = None            # McpClientManager (lazy init)
 
@@ -151,6 +152,12 @@ class AgentCore:
                          "query": {"type": "string"},
                      }, "required": ["query"]},
                      None, permission=0, skill_name="core"),
+            ToolInfo("run_code", "Write a Python program that composes multiple tool calls via tools.run(name, args) and returns the final value with submit(value). Intermediate tool results stay inside the program (not sent back to you), so only submit the small final answer.",
+                     {"type": "object", "properties": {
+                         "code": {"type": "string", "description": "Python source. Available: tools.run(name, args) -> str (sync), submit(value) -> exits with final value."},
+                         "timeout": {"type": "integer", "description": "Wall-clock seconds (default 300)", "default": 300},
+                     }, "required": ["code"]},
+                     None, permission=2, skill_name="core"),
         ]:
             self._tool_registry.register(ti)
 
@@ -357,6 +364,7 @@ class AgentCore:
         messages, _ = await self._build_messages(
             user_input, ctx, level, provider_info, provider
         )
+        self._inject_preset_instruction(messages)
 
         # 4. ReAct 循环
         tool_results: list[dict[str, Any]] = []
@@ -408,7 +416,7 @@ class AgentCore:
                 # ── 闸门 1: 权限检查 ──
                 perm = self._get_tool_permission(name)
                 whitelist = getattr(self, '_permission_whitelist', set())
-                auto_mode = getattr(self, '_mode', 'normal') == 'auto'
+                auto_mode = getattr(self, '_mode', 'normal') == 'auto' or self._preset == 'minimal'
 
                 # ── 闸门 2: 策略引擎 ──
                 if self._policy_engine:
@@ -431,7 +439,7 @@ class AgentCore:
 
                 t0_tool = time.time()
                 try:
-                    output = await self._execute_tool(name, args)
+                    output = await self._execute_tool(name, args, ctx)
                     success = True
                     result_text = str(output)
                 except Exception as e:
@@ -601,6 +609,7 @@ class AgentCore:
         messages, comp_meta = await self._build_messages(
             request.input, ctx, level, provider_info, provider
         )
+        self._inject_preset_instruction(messages)
 
         # 注入上一轮工具摘要
         if hasattr(ctx, 'turns') and ctx.turns:
@@ -819,8 +828,8 @@ class AgentCore:
                 )
 
                 # ── 权限检查 ──
-                # automode: 跳过所有确认
-                if getattr(self, '_automode', False):
+                # automode / minimal 预设: 跳过所有确认
+                if getattr(self, '_automode', False) or self._preset == 'minimal':
                     pass  # 直接执行
                 else:
                     perm = self._get_tool_permission(name)
@@ -888,7 +897,9 @@ class AgentCore:
                         )
                         tool_results.append({"name": name, "success": False, "output": f"policy_deny:{decision.policy_name}"})
                         continue
-                    elif decision.action == "confirm" and not getattr(self, '_automode', False):
+                    elif decision.action == "confirm" and not (
+                        getattr(self, '_automode', False) or self._preset == 'minimal'
+                    ):
                         confirm_event = asyncio.Event()
                         self._confirm_allowed = False; self._confirm_pending = confirm_event
                         yield ToolCallConfirm(
@@ -910,7 +921,7 @@ class AgentCore:
                 stakes = tool_info.stakes if tool_info else None
                 risk_blocked = False
 
-                if stakes is not None and (
+                if self._preset != 'minimal' and stakes is not None and (
                     stakes.reversibility > 0.6 or stakes.max_loss > 0.5
                 ):
                     risk_perm = float(tool_info.permission) if tool_info else float(perm)
@@ -975,7 +986,7 @@ class AgentCore:
                 diff_preview = _try_diff(name, args)  # write_file 时生成 diff
 
                 try:
-                    output = await self._execute_tool(name, args)
+                    output = await self._execute_tool(name, args, ctx)
                     success = True
                     result_text = str(output)
                 except FileNotFoundError as e:
@@ -1130,8 +1141,24 @@ class AgentCore:
 
     def _get_tools(self) -> list[dict[str, Any]] | None:
         if self._tool_registry:
-            return self._tool_registry.get_tools(mode=self._mode)
+            return self._tool_registry.get_tools(mode=self._mode, preset=self._preset)
         return None
+
+    def _inject_preset_instruction(self, messages: list[dict]) -> None:
+        """把当前预设的说明注入 messages 头部（每次 run/run_stream 调用一次）。
+
+        standard 预设无说明，零开销。合并进首条 system 消息以避免重复 role。
+        """
+        from .presets import get_preset
+        p = get_preset(self._preset)
+        if not p.instruction:
+            return
+        if messages and messages[0].get("role") == "system":
+            first = dict(messages[0])
+            first["content"] = f"{first.get('content', '')}\n\n{p.instruction}"
+            messages[0] = first
+        else:
+            messages.insert(0, {"role": "system", "content": p.instruction})
 
     def _build_mcp_tools_section(self) -> str:
         """构建 MCP 工具参考——动态注入 system prompt。"""
@@ -1174,6 +1201,7 @@ class AgentCore:
         WRITE_TOOLS = {
             "shell_exec", "download_pdf", "write_paper_notes",
             "write_file", "download", "upload", "intel_brief",
+            "edit_file", "run_code",
         }
 
         if name in SAFE_TOOLS:
@@ -1200,7 +1228,28 @@ class AgentCore:
         if self._confirm_pending:
             self._confirm_pending.set()
 
-    async def _execute_tool(self, name: str, args: dict) -> str:
+    async def _execute_tool(self, name: str, args: dict, ctx: "AgentContext | None" = None) -> str:
+        if name == "shell_exec" and self._preset == "minimal" and ctx is not None:
+            # minimal 预设：走持久 shell（cwd/env 跨调用保持）
+            from tianshu.diyao.persistent_shell import PersistentShell
+            if ctx.shell is None:
+                ctx.shell = PersistentShell()
+            return await ctx.shell.run(
+                args.get("command", ""),
+                timeout=float(args.get("timeout", 60)),
+            )
+        if name == "run_code":
+            # PTC 代码模式：模型写 Python 程序组合工具调用
+            from .ptc import run_program
+            code = args.get("code", "")
+            if not code:
+                return "[run_code] code 参数为空"
+            return await run_program(
+                code,
+                self._ptc_exec,
+                timeout=float(args.get("timeout", 300)),
+                cwd=args.get("cwd", ""),
+            )
         if name == "get_model_status":
             models = self._registry.list_all() if self._registry else []
             return "\n".join(
@@ -1223,6 +1272,19 @@ class AgentCore:
                 for r in results
             )
         return await self._skills.execute(name, args)
+
+    async def _ptc_exec(self, name: str, args: dict) -> str:
+        """PTC 程序内工具调用：策略 deny→错误；confirm→拒绝（子进程内无法交互）；其余正常执行。"""
+        if self._policy_engine and self._policy_engine.enabled:
+            decision = self._policy_engine.evaluate(name, args)
+            if decision and decision.action == "deny":
+                return f"[策略拒绝] {decision.message or decision.policy_name}"
+            if decision and decision.action == "confirm":
+                return "[策略确认无法在代码模式内交互，已拒绝]"
+        try:
+            return str(await self._skills.execute(name, args))
+        except Exception as e:
+            return f"[工具失败] {type(e).__name__}: {e}"
 
     # ── 三爻通道 demo ─────────────────────────────────────────────
 
@@ -1456,45 +1518,43 @@ def _brief_args(args: dict) -> str:
 
 
 def _compute_diff(old: str, new: str, filepath: str = "", context_lines: int = 3) -> str:
-    """生成 unified diff——写文件前预览变更。"""
-    import difflib
-    old_lines = old.splitlines(keepends=True)
-    new_lines = new.splitlines(keepends=True)
-    # 确保末尾有换行（difflib 要求）
-    if old_lines and not old_lines[-1].endswith("\n"):
-        old_lines[-1] += "\n"
-    if new_lines and not new_lines[-1].endswith("\n"):
-        new_lines[-1] += "\n"
-
-    diff = difflib.unified_diff(
-        old_lines, new_lines,
-        fromfile=f"a/{filepath}" if filepath else "a/old",
-        tofile=f"b/{filepath}" if filepath else "b/new",
-        n=context_lines,
-    )
-    result = "".join(diff)
-    if not result:
-        return "(无变更)"
-    return result
+    """生成 unified diff——写文件前预览变更。实现委托给 diyao.diff（file_ops 共用）。"""
+    from tianshu.diyao.diff import compute_diff
+    return compute_diff(old, new, filepath=filepath, context_lines=context_lines)
 
 
 def _try_diff(tool_name: str, args: dict) -> str:
-    """对写文件操作生成 diff 预览。"""
-    if tool_name != "write_file":
-        return ""
+    """对写文件/行级编辑操作生成 diff 预览。"""
     path = args.get("path") or args.get("file_path") or args.get("filename") or ""
-    content = args.get("content") or ""
-    if not path or not content:
+    if not path:
         return ""
     try:
         import os as _os
-        if _os.path.exists(path):
+        if tool_name == "write_file":
+            content = args.get("content") or ""
+            if not content:
+                return ""
+            if _os.path.exists(path):
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    old_content = f.read()
+                if old_content != content:
+                    return _compute_diff(old_content, content, path)
+            else:
+                return f"[新文件] {path}\n+ {len(content)} chars"
+        elif tool_name == "edit_file":
+            old_string = args.get("old_string") or ""
+            new_string = args.get("new_string") or ""
+            if not old_string or not _os.path.exists(path):
+                return ""
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 old_content = f.read()
-            if old_content != content:
-                return _compute_diff(old_content, content, path)
-        else:
-            return f"[新文件] {path}\n+ {len(content)} chars"
+            if old_string not in old_content:
+                return ""
+            replace_all = bool(args.get("replace_all"))
+            new_content = old_content.replace(old_string, new_string) if replace_all \
+                else old_content.replace(old_string, new_string, 1)
+            if old_content != new_content:
+                return _compute_diff(old_content, new_content, path)
     except Exception:
         return ""
     return ""

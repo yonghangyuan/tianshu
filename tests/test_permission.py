@@ -44,6 +44,12 @@ class TestToolPermission:
         assert core._get_tool_permission("download_pdf") == 2
         assert core._get_tool_permission("write_paper_notes") == 2
 
+    def test_preset_tools_write_level(self):
+        """edit_file / run_code 必须映射为 WRITE=2，否则确认逻辑全错。"""
+        core = AgentCore()
+        assert core._get_tool_permission("edit_file") == 2
+        assert core._get_tool_permission("run_code") == 2
+
     def test_write_prefix_match(self):
         core = AgentCore()
         assert core._get_tool_permission("write_config") == 2

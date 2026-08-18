@@ -269,9 +269,14 @@ def _register_builtins(reg: CommandRegistry) -> None:
         ctx.print("[dim]Planner 规划（由主循环处理）[/dim]")
 
     @reg.register("mode", aliases=["/mode"], category="config",
-                  description="循环切换模式: normal → auto → plan")
+                  description="循环切换模式: normal → auto → plan (Shift+Tab)")
     async def _mode_cmd(ctx: CommandContext) -> None:
         ctx.print("[dim]模式切换（由主循环处理）[/dim]")
+
+    @reg.register("preset", aliases=["/preset"], category="config",
+                  description="循环切换预设: standard → minimal → code(PTC) (F2)")
+    async def _preset_cmd(ctx: CommandContext) -> None:
+        ctx.print("[dim]预设切换（由主循环处理）[/dim]")
 
     @reg.register("config", aliases=["/config"], category="config",
                   description="配置管理 (/config show)")

@@ -62,7 +62,8 @@ def _print_cmd_help() -> None:
         ("/rag", "RAG 知识库"),
         ("/star", "星群通信"),
         ("/tools", "查看工具"),
-        ("/mode, Tab", "切换 normal/auto/plan"),
+        ("/mode, Shift+Tab", "切换 normal/auto/plan"),
+        ("/preset, F2", "切换 标准/极简/代码(PTC)"),
         ("/cost", "Token 消耗"),
         ("/clear", "清屏"),
         ("exit, q", "退出"),
@@ -284,6 +285,13 @@ async def _handle_session(
         ctx.session_id = loaded.session_id
         ctx.messages = loaded.messages
         ctx.metadata = loaded.metadata
+        # 持久 shell 不入库——resume 后丢弃旧句柄（极简模式惰性重建）
+        if getattr(ctx, "shell", None) is not None:
+            try:
+                ctx.shell.stop()
+            except Exception:
+                pass
+        ctx.shell = None
         _rich_console.print(f"\n  ✅ 已恢复会话 [cyan]{session_id[:8]}[/cyan] ({len(ctx.messages)} 条消息)\n")
 
     elif sub == "delete" and len(parts) > 2:
@@ -295,9 +303,15 @@ async def _handle_session(
             _rich_console.print(f"\n  [red]会话未找到: {session_id[:8]}[/red]\n")
 
     elif sub == "new":
+        if getattr(ctx, "shell", None) is not None:
+            try:
+                ctx.shell.stop()
+            except Exception:
+                pass
         ctx.session_id = f"sess_{int(time.time())}"
         ctx.messages.clear()
         ctx.metadata.clear()
+        ctx.shell = None
         _rich_console.print(f"\n  ✅ 新会话 [cyan]{ctx.session_id[:8]}[/cyan]\n")
 
     else:
@@ -436,16 +450,58 @@ def _main_sync() -> None:
         _rich_console.print(f"\r  {_mode_label(_mode)}  [dim](Shift+Tab / /mode 切换)[/dim]")
         return _mode
 
+    # ── 预设系统（与模式正交：standard / minimal / code）──
+    _preset = "standard"
+    _preset_pending = None  # F2 请求进入 minimal 的待确认标记
+
+    def _preset_label(p: str) -> str:
+        return {
+            "standard": "[dim]◇ standard[/dim]",
+            "minimal": "[bold yellow]◆ minimal[/bold yellow]",
+            "code": "[bold #34d399]✧ code(PTC)[/bold #34d399]",
+        }.get(p, "◇ ??")
+
+    def _preset_plain(p: str) -> str:
+        return {"standard": "", "minimal": "◆", "code": "✧"}.get(p, "")
+
+    def _apply_preset(p: str) -> None:
+        nonlocal _preset
+        if _preset == p:
+            return
+        # 离开 minimal → 收掉持久 shell
+        if _preset == "minimal" and getattr(ctx, "shell", None) is not None:
+            try:
+                ctx.shell.stop()
+            except Exception:
+                pass
+            ctx.shell = None
+        _preset = p
+        core._preset = p
+        _rich_console.print(f"\r  {_preset_label(p)}  [dim](F2 / /preset 切换)[/dim]")
+
+    def _cycle_preset():
+        nonlocal _preset, _preset_pending
+        from tianshu.core.presets import PRESET_ORDER
+        nxt = PRESET_ORDER[(PRESET_ORDER.index(_preset) + 1) % len(PRESET_ORDER)]
+        if nxt == "minimal":
+            # F2 回调在 prompt_toolkit 事件循环内，不能阻塞询问——
+            # 置待确认标记，主循环在下次 prompt() 前弹 y/n
+            _preset_pending = nxt
+        else:
+            _apply_preset(nxt)
+        return _preset
+
     input_handler = create_input_handler(
         commands=cmd_registry.command_names,
         model_names=model_names,
         mode_callback=_cycle_mode,
+        preset_callback=_cycle_preset,
     )
 
     def _prompt_text():
         m = ctx.metadata.get("model_override", "")
         model_part = m if m else "天枢"
-        return f"{_mode_plain(_mode)} {model_part}> "
+        return f"{_mode_plain(_mode)}{_preset_plain(_preset)} {model_part}> "
 
     # ── 会话存储 ──
     from tianshu.memory.session_store import get_session_store
@@ -470,6 +526,20 @@ def _main_sync() -> None:
 
     # ── 同步主循环 ──
     while True:
+        # 预设进入确认（F2 触发——在同步环境询问，prompt_toolkit 回调内不能阻塞）
+        if _preset_pending:
+            pending, _preset_pending = _preset_pending, None
+            _rich_console.print(
+                "[bold yellow]  极简模式: 仅 4 个工具(shell/edit_file/read_file/list_dir)，"
+                "跳过每次确认，策略引擎仍生效[/bold yellow]"
+            )
+            ans = input("  进入极简模式? [y/N] ").strip().lower()
+            if ans in ("y", "yes"):
+                _apply_preset(pending)
+            else:
+                _rich_console.print("  已取消")
+            continue
+
         try:
             user_input = input_handler.prompt(_prompt_text()).strip()
         except (EOFError, KeyboardInterrupt):
@@ -584,6 +654,9 @@ def _main_sync() -> None:
             continue
         elif user_input in ("mode", "/mode"):
             _cycle_mode()
+            continue
+        elif user_input in ("preset", "/preset"):
+            _cycle_preset()
             continue
         elif user_input.startswith("session") or user_input.startswith("/session"):
             asyncio.run(_handle_session(user_input, session_store, ctx))
@@ -918,6 +991,12 @@ def _main_sync() -> None:
         _rich_console.print()
         session_store.save(ctx, title=user_input[:50])
 
+    # 退出清理：收掉持久 shell（极简模式）
+    if getattr(ctx, "shell", None) is not None:
+        try:
+            ctx.shell.stop()
+        except Exception:
+            pass
     _rich_console.print("[dim]天枢已关闭[/dim]")
 
 
@@ -926,6 +1005,7 @@ def _show_status(core, renderer) -> None:
     cost = getattr(renderer, '_last_cost', {}) or {}
     _rich_console.print(f"  模型: [cyan]{cost.get('model', '?')}[/cyan]")
     _rich_console.print(f"  模式: [dim]{core._mode}[/dim]")
+    _rich_console.print(f"  预设: [dim]{getattr(core, '_preset', 'standard')}[/dim]")
     _rich_console.print(f"  记忆: {asyncio.run(core.memory.count())} 条")
     _rich_console.print(f"  子Agent: {core.orchestrator.active_count} 活跃")
     _rich_console.print(f"  项目: [dim]{getattr(core, '_project_slug', '?')}[/dim]")

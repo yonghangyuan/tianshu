@@ -161,15 +161,27 @@ class ToolRegistry:
     def get(self, name: str) -> ToolInfo | None:
         return self._tools.get(name)
 
-    def get_tools(self, mode: str = "normal") -> list[dict]:
-        """获取工具列表（OpenAI schema 格式），按模式过滤。
+    def get_tools(self, mode: str = "normal", preset: str = "standard") -> list[dict]:
+        """获取工具列表（OpenAI schema 格式），按 预设 × 模式 双维度过滤。
 
-        normal: 全工具
-        plan:   只读（SAFE + READ 级别）
-        auto:   全工具
+        过滤顺序：preset allowlist → preset hidden → mode 权限过滤。
+        plan 的只读契约绝对优先（即使 minimal 的 allowlist 含 WRITE 工具也会被剔除）。
+
+        preset:
+          standard: 全工具（隐藏 run_code）
+          minimal:  仅 shell_exec/edit_file/read_file/list_dir
+          code:     全工具 + run_code
+        mode:
+          normal: 全量 / plan: 只读（SAFE + READ 级别）/ auto: 全量
         """
+        from .presets import get_preset
+        p = get_preset(preset)
         schemas = []
         for tool in self._tools.values():
+            if p.allowlist is not None and tool.name not in p.allowlist:
+                continue  # 预设白名单
+            if tool.name in p.hidden:
+                continue  # 预设隐藏
             if mode == "plan" and tool.permission >= 2:
                 continue  # plan 模式跳过高风险工具
             schemas.append(tool.to_openai_schema())

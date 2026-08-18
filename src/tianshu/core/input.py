@@ -18,6 +18,7 @@ def create_input_handler(
     commands: list[str] | None = None,
     model_names: list[str] | None = None,
     mode_callback: Any = None,  # Callable[[], str] — 切换模式，返回新模式名
+    preset_callback: Any = None,  # Callable[[], str] — 切换预设（F2），返回新预设名
 ) -> "InputHandler":
     """工厂函数：创建输入处理器。
 
@@ -110,6 +111,7 @@ def create_input_handler(
             history=pt_history,
             completer=completer,
             mode_callback=mode_callback,
+            preset_callback=preset_callback,
         )
     except ImportError:
         pass
@@ -153,11 +155,13 @@ class FallbackHandler(InputHandler):
 class PromptToolkitHandler(InputHandler):
     """prompt_toolkit 完整实现。支持 Shift+Tab 切模式。"""
 
-    def __init__(self, session, history, completer=None, mode_callback=None) -> None:
+    def __init__(self, session, history, completer=None, mode_callback=None,
+                 preset_callback=None) -> None:
         self._session = session
         self._history = history
         self._completer = completer
         self._mode_callback = mode_callback
+        self._preset_callback = preset_callback
 
     def prompt(self, prompt_text: str = "▸ ") -> str:
         from prompt_toolkit.styles import Style
@@ -174,6 +178,14 @@ class PromptToolkitHandler(InputHandler):
             if self._mode_callback:
                 self._mode_callback()
             # 刷新提示符——通过触发一个空操作让 session 重新渲染
+            event.app.renderer.clear()
+            event.app.invalidate()
+
+        # ── F2: 切换预设 (standard / minimal / code) ──
+        @kb.add("f2")
+        def _(event):
+            if self._preset_callback:
+                self._preset_callback()
             event.app.renderer.clear()
             event.app.invalidate()
 

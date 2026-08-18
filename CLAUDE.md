@@ -55,6 +55,7 @@ src/tianshu/
 - RAG 知识库: SQLite FTS5(BM25) + float32 向量混合检索(RRF融合)，零新增硬依赖，PDF/Markdown/代码摄取
 - MCP Client: 完整 stdio + HTTP 双 transport，支持多 server 并行
 - 星群通信: StarBus 总线 — Agent 间点对点消息/话题广播/共享记忆板 + 辩论/投票
+- 预设系统: standard/minimal/code 三轴（F2//preset 切换，与 normal/auto/plan 模式正交）——极简模式=持久 cmd shell(cwd/env 保持)+edit_file 行级编辑+免确认(策略引擎仍生效)；代码模式(PTC)=全量工具+run_code，模型写 Python 程序组合工具调用，仅 submit 值回上下文
 - WorldAdapter: 统一 Modbus/Voxel/Sim 后端接口
 - 真 SSE 流式: token 级别实时输出
 

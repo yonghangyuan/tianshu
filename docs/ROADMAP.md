@@ -237,6 +237,8 @@
 | PDF 工具箱 | Edge headless print-to-pdf + pypdf (13 工具: 生成/合并/拆分/旋转/水印/加密/表单) | 08-13 |
 | 测试套件清理 | sandbox 超时 transport 泄漏 + pypdf 弃用警告 → 207 tests 0 warnings | 08-14 |
 | 评测扩充 | 14 场景 (rag/pdf/starbus) + runner --mock 修复 (one-shot 工具调用/chat_stream/参数捕获) | 08-14 |
+| Agent 预设系统 | standard/minimal/code 三预设轴（F2//preset 切换，与 normal/auto/plan 正交）：极简=持久shell+edit_file+read_file+list_dir 免确认；代码(PTC)=全量工具+run_code 编程组合（stdout 帧协议+submit 返回，300s/64KB 预算） | 08-18 |
+| edit_file 行级编辑 | old_string/new_string 精确替换（0/多匹配报错，replace_all），diff 返回，CRLF/LF 原样保留 | 08-18 |
 
 ---
 

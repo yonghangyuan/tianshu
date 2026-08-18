@@ -39,6 +39,7 @@ ALLOWED_HOT_IMPORTS = {
     "tianshu.memory.provider",
     "tianshu.rag", "tianshu.rag.service",
     "tianshu.core.tool_registry", "tianshu.core.policy_engine",
+    "tianshu.core.presets", "tianshu.core.ptc",
     "tianshu.core.planner", "tianshu.core.router",
     "tianshu.core.db", "tianshu.core.turn_machine",
     "tianshu.diyao.sandbox",
