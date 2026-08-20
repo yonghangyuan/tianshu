@@ -1,0 +1,48 @@
+# 预设配置 — 覆盖内置三预设或追加自定义预设
+#
+# 加载顺序：本文件（项目级） → ~/.tianshu/presets.yaml（用户级，优先）。
+# 同名预设整体覆盖内置；新名追加进 F2 循环。
+# 删除本文件 = 回到内置默认（standard/minimal/code）。
+#
+# 字段：
+#   label         CLI 显示名
+#   allowlist     工具白名单（缺省=全部工具）；工具名见 /tools
+#   hidden        始终隐藏的工具
+#   skip_confirm  true=跳过权限确认（策略 deny 永不豁免）
+#   skip_trigram  true=跳过三爻风险否决
+#   instruction   注入 system prompt 的说明（多行）
+
+presets:
+  standard:
+    label: 标准
+    hidden: [run_code]
+
+  minimal:
+    label: 极简
+    allowlist: [shell_exec, edit_file, read_file, list_dir]
+    skip_confirm: true
+    skip_trigram: true
+    instruction: |
+      [极简模式] 你只能使用 4 个工具: shell_exec(持久 shell, cwd/环境变量跨调用保持)、
+      edit_file(行级精确替换)、read_file、list_dir。
+      工具执行无需用户确认，但策略引擎仍会拦截危险命令。
+      修改文件优先用 edit_file 精确替换，避免整文件重写。
+
+  code:
+    label: 代码(PTC)
+    instruction: |
+      [代码模式 PTC] 你可以编写 Python 程序组合多个工具调用，一次执行：
+        r = tools.run("read_file", {"path": "a.py"})   # 同步调用工具，r 为字符串结果
+        tools.run("edit_file", {"path": "a.py", "old_string": "x", "new_string": "y"})
+        submit(最终结果)   # 调用后程序立即结束，该值作为 run_code 的唯一返回
+      不调用 submit 时，程序 stdout 的最后 2000 字符作为返回。
+      限制: 默认 300 秒墙钟超时、输出累计上限 64KB、单次工具结果上限 8KB。
+      程序内工具调用会经过策略引擎检查，被拒绝时 tools.run 抛 RuntimeError。
+      提交值请保持精简(≤8KB)，过长会被截断。
+
+  # ── 自定义示例（取消注释即生效，F2 循环自动纳入）──
+  # research:
+  #   label: 检索
+  #   allowlist: [web_search, read_file, paper_search, rag_search, list_dir]
+  #   instruction: |
+  #     [检索模式] 只做资料检索与阅读，不修改任何文件。

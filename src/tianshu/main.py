@@ -476,8 +476,9 @@ def _main_sync() -> None:
 
     def _cycle_preset():
         nonlocal _preset, _preset_pending
-        from tianshu.core.presets import PRESET_ORDER
-        nxt = PRESET_ORDER[(PRESET_ORDER.index(_preset) + 1) % len(PRESET_ORDER)]
+        from tianshu.core.presets import preset_order
+        order = preset_order()
+        nxt = order[(order.index(_preset) + 1) % len(order)] if _preset in order else order[0]
         if nxt == "minimal":
             # 置待确认标记，主循环在 prompt() 返回后立即弹 y/n——
             # inline 模式 F2 按键在 prompt 内，返回后处理天然即时

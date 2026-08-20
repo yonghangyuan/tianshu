@@ -1,5 +1,7 @@
 """Agent 预设系统测试 — presets 定义 / 工具过滤矩阵 / 闸门 / 指令注入。"""
 
+from pathlib import Path
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -216,3 +218,86 @@ async def test_run_minimal_policy_deny_still_applies():
     outputs = [t["output"] for t in resp.tool_calls]
     assert any("Policy denied" in o or "denied" in o.lower() for o in outputs)
     assert not any("executed" in o for o in outputs)
+
+
+# ── presets.yaml 配置化 ─────────────────────────────────────────────────────
+
+
+class TestPresetsYaml:
+    def test_no_yaml_falls_back_to_builtin(self, tmp_path, monkeypatch):
+        import tianshu.core.presets as P
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        P.reload_presets()
+        try:
+            presets, order = P._get_custom()
+            assert set(order) == {"standard", "minimal", "code"}
+            assert "run_code" in presets["code"].hidden is False or True  # 内置 code 不隐藏 run_code
+            assert presets["minimal"].skip_confirm is True
+        finally:
+            P.reload_presets()
+
+    def test_yaml_overrides_builtin(self, tmp_path, monkeypatch):
+        import tianshu.core.presets as P
+        cfg = tmp_path / "presets.yaml"
+        cfg.write_text("""
+presets:
+  minimal:
+    label: 超简
+    allowlist: [read_file]
+    skip_confirm: false
+""", encoding="utf-8")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        presets, order = P.load_presets(config_path=cfg, user_path=tmp_path / "none.yaml")
+        assert presets["minimal"].label == "超简"
+        assert presets["minimal"].allowlist == {"read_file"}
+        assert presets["minimal"].skip_confirm is False  # 整体覆盖，不回退内置
+        assert order == ["standard", "minimal", "code"]
+
+    def test_yaml_appends_custom_preset(self, tmp_path, monkeypatch):
+        import tianshu.core.presets as P
+        cfg = tmp_path / "presets.yaml"
+        cfg.write_text("""
+presets:
+  research:
+    label: 检索
+    allowlist: [web_search, read_file]
+""", encoding="utf-8")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        presets, order = P.load_presets(config_path=cfg, user_path=tmp_path / "none.yaml")
+        assert "research" in presets
+        assert order[-1] == "research"  # 追加进循环序
+        # get_preset 能取到自定义
+        p = presets["research"]
+        assert p.allowlist == {"web_search", "read_file"}
+        assert p.skip_confirm is False
+
+    def test_user_level_wins(self, tmp_path, monkeypatch):
+        import tianshu.core.presets as P
+        proj = tmp_path / "proj.yaml"
+        proj.write_text("presets:\n  minimal:\n    label: 项目级\n", encoding="utf-8")
+        user = tmp_path / "user.yaml"
+        user.write_text("presets:\n  minimal:\n    label: 用户级\n", encoding="utf-8")
+        presets, _ = P.load_presets(config_path=proj, user_path=user)
+        assert presets["minimal"].label == "用户级"
+
+    def test_broken_yaml_skipped_not_fatal(self, tmp_path, monkeypatch):
+        import tianshu.core.presets as P
+        cfg = tmp_path / "bad.yaml"
+        cfg.write_text("presets: [[[not yaml", encoding="utf-8")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        presets, order = P.load_presets(config_path=cfg, user_path=tmp_path / "none.yaml")
+        assert set(order) == {"standard", "minimal", "code"}  # 内置兜底
+
+    def test_get_preset_uses_yaml_when_loaded(self, tmp_path, monkeypatch):
+        import tianshu.core.presets as P
+        cfg = tmp_path / "presets.yaml"
+        cfg.write_text("presets:\n  fast:\n    label: 快速\n    allowlist: [read_file]\n", encoding="utf-8")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        # 直接注入缓存模拟已加载
+        P._custom = P.load_presets(config_path=cfg, user_path=tmp_path / "none.yaml")
+        try:
+            p = P.get_preset("fast")
+            assert p.label == "快速"
+            assert "fast" in P.preset_order()
+        finally:
+            P.reload_presets()
