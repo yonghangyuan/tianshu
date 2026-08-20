@@ -435,13 +435,6 @@ def _main_sync() -> None:
     # ── 模式系统 ──
     _mode = "normal"
 
-    def _mode_label(m: str) -> str:
-        return {
-            "normal": "[dim]⏵ normal[/dim]",
-            "auto":   "[bold #a78bfa]⏵⏵ auto[/bold #a78bfa]",
-            "plan":   "[bold cyan]⏵ plan[/bold cyan]",
-        }.get(m, "⏵ ??")
-
     def _mode_plain(m: str) -> str:
         return {"normal": "⏵", "auto": "⏵⏵", "plan": "◉"}.get(m, "⏵")
 
@@ -456,19 +449,12 @@ def _main_sync() -> None:
         elif _mode == "plan":
             _mode = "normal"
             core._automode = False; core._mode = "normal"
-        _rich_console.print(f"\r  {_mode_label(_mode)}  [dim](Shift+Tab / /mode 切换)[/dim]")
+        # 反馈只在底部状态栏（mode 已入 format_status_bar），不刷屏
         return _mode
 
     # ── 预设系统（与模式正交：standard / minimal / code）──
     _preset = "standard"
     _preset_pending = None  # F2 请求进入 minimal 的待确认标记
-
-    def _preset_label(p: str) -> str:
-        return {
-            "standard": "[dim]◇ standard[/dim]",
-            "minimal": "[bold yellow]◆ minimal[/bold yellow]",
-            "code": "[bold #34d399]✧ code(PTC)[/bold #34d399]",
-        }.get(p, "◇ ??")
 
     def _preset_plain(p: str) -> str:
         return {"standard": "", "minimal": "◆", "code": "✧"}.get(p, "")
@@ -486,7 +472,7 @@ def _main_sync() -> None:
             ctx.shell = None
         _preset = p
         core._preset = p
-        _rich_console.print(f"\r  {_preset_label(p)}  [dim](F2 / /preset 切换)[/dim]")
+        # 反馈只在底部状态栏（preset 已入 format_status_bar），不刷屏
 
     def _cycle_preset():
         nonlocal _preset, _preset_pending
