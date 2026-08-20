@@ -136,7 +136,8 @@ def main():
     args = parser.parse_args()
 
     # 初始化 AgentCore
-    config_dir = _project_root / "config"
+    from tianshu.core.config import resolve_config_dir
+    config_dir = resolve_config_dir(_project_root)
     user_keys = load_user_keys()
     registry = load_providers(config_dir / "providers.yaml", extra_keys=user_keys)
     routing = load_routing_config(config_dir / "providers.yaml")

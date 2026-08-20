@@ -15,6 +15,22 @@ from ..diyao.providers.registry import ProviderRegistry
 from .router import ModelRouter, RoutingConfig, RoutingRule
 
 
+def resolve_config_dir(project_root: Path | None = None) -> Path:
+    """解析 config/ 目录：pip 安装场景下项目根没有 config/，回退到 ~/.tianshu/config/。
+
+    优先级: TIANSHU_CONFIG_DIR 环境变量 > project_root/config（存在时）
+    > ~/.tianshu/config（不存在则返回此路径，由调用方决定是否引导初始化）。
+    """
+    env_dir = os.environ.get("TIANSHU_CONFIG_DIR")
+    if env_dir:
+        return Path(env_dir)
+    if project_root is not None:
+        candidate = project_root / "config"
+        if candidate.is_dir():
+            return candidate
+    return Path.home() / ".tianshu" / "config"
+
+
 def _resolve_env(value: str) -> str:
     """解析 ${ENV_VAR} 占位符。"""
     pattern = re.compile(r"\$\{(\w+)\}")

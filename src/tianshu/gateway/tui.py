@@ -184,7 +184,8 @@ def _key_watcher() -> None:
 def main() -> None:
     global _core, _ctx, _model
 
-    config_dir = _project_root / "config"
+    from tianshu.core.config import resolve_config_dir
+    config_dir = resolve_config_dir(_project_root)
     p_yaml = config_dir / "providers.yaml"
     soul_md = config_dir / "soul.md"
 

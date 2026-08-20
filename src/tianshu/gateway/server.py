@@ -49,12 +49,13 @@ _ws_rate_limit: dict[str, float] = {}  # IP → last message time
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _core
-    config_dir = _project_root / "config"
+    from tianshu.core.config import resolve_config_dir
+    config_dir = resolve_config_dir(_project_root)
     providers_yaml = config_dir / "providers.yaml"
     soul_md = config_dir / "soul.md"
 
     if not providers_yaml.exists():
-        raise RuntimeError("config/providers.yaml not found")
+        raise RuntimeError(f"{providers_yaml} not found")
 
     user_keys = load_user_keys()
     registry = load_providers(providers_yaml, extra_keys=user_keys)

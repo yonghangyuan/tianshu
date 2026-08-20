@@ -1,5 +1,5 @@
 [project]
-name = "tianshu"
+name = "tianshu-agent"
 version = "0.2.0"
 description = "天枢 Agent — 中国本土独立自主通用 AI Agent 框架"
 readme = "README.md"
@@ -61,3 +61,8 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# 非 .py 资产必须显式声明，否则 wheel 缺 skills 清单/文档/网关页面
+[tool.setuptools.package-data]
+"tianshu.renyao.skills" = ["*.json", "*.md"]
+"tianshu.gateway" = ["*.html"]

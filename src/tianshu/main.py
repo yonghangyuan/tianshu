@@ -348,13 +348,16 @@ def main() -> None:
 def _main_sync() -> None:
     """初始化 + 同步主循环。"""
     # ── 初始化（同原来 _main 的 setup 部分）──
-    config_dir = _project_root / "config"
+    from tianshu.core.config import resolve_config_dir
+    config_dir = resolve_config_dir(_project_root)
     providers_yaml = config_dir / "providers.yaml"
     soul_md = config_dir / "soul.md"
 
     if not providers_yaml.exists():
-        _rich_console.print("[red]❌ config/providers.yaml 未找到[/red]")
-        _rich_console.print("[dim]请从 config/providers.yaml.example 复制并填入 API Key[/dim]")
+        _rich_console.print(f"[red]❌ {providers_yaml} 未找到[/red]")
+        _rich_console.print("[dim]pip 安装用户: mkdir ~/.tianshu/config 并放入 providers.yaml/soul.md，"
+                            "或设 TIANSHU_CONFIG_DIR 指向配置目录[/dim]")
+        _rich_console.print("[dim]源码用户: 从 config/ 目录复制并填入 API Key[/dim]")
         return
 
     user_keys = load_user_keys()
