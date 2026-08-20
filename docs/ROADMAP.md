@@ -239,6 +239,8 @@
 | 评测扩充 | 14 场景 (rag/pdf/starbus) + runner --mock 修复 (one-shot 工具调用/chat_stream/参数捕获) | 08-14 |
 | Agent 预设系统 | standard/minimal/code 三预设轴（F2//preset 切换，与 normal/auto/plan 正交）：极简=持久shell+edit_file+read_file+list_dir 免确认；代码(PTC)=全量工具+run_code 编程组合（stdout 帧协议+submit 返回，300s/64KB 预算） | 08-18 |
 | edit_file 行级编辑 | old_string/new_string 精确替换（0/多匹配报错，replace_all），diff 返回，CRLF/LF 原样保留 | 08-18 |
+| inline 底部状态栏 | prompt_toolkit bottom_toolbar（gateway/statusbar.py）：打字时常驻模式/预设/token/缓存命中；不进 alt-screen，原生 scrollback/滚轮/选字复制保留；Ctrl+C 原生取消；/setup /model 直接跑（alt-screen 全屏方案 08-20 废弃——Windows 滚轮与 QUICK_EDIT 选字互斥 + asyncio.run 线程池 join 卡死） | 08-20 |
+| 缓存命中埋管 | base 流式+非流式 usage 解析 prompt_cache_hit_tokens → StreamDone/AgentResponse.cached_tokens → 会话聚合 + /cost /status 显示命中率 | 08-18 |
 
 ---
 

@@ -56,6 +56,8 @@ src/tianshu/
 - MCP Client: 完整 stdio + HTTP 双 transport，支持多 server 并行
 - 星群通信: StarBus 总线 — Agent 间点对点消息/话题广播/共享记忆板 + 辩论/投票
 - 预设系统: standard/minimal/code 三轴（F2//preset 切换，与 normal/auto/plan 模式正交）——极简模式=持久 cmd shell(cwd/env 保持)+edit_file 行级编辑+免确认(策略引擎仍生效)；代码模式(PTC)=全量工具+run_code，模型写 Python 程序组合工具调用，仅 submit 值回上下文
+- inline 底部状态栏: prompt_toolkit bottom_toolbar（gateway/statusbar.py，mycli 同款）——打字时常驻模式/预设/token/缓存命中率；不进 alt-screen，终端原生 scrollback/滚轮/选字复制全部自然工作；无 TTY/Git Bash 自动降级无状态栏（alt-screen 全屏方案已废弃：Windows 下滚轮事件与 QUICK_EDIT 选字互斥，2026-08-20）
+- 缓存命中: base 层流式+非流式均解析 prompt_cache_hit_tokens → StreamDone/AgentResponse.cached_tokens 会话聚合
 - WorldAdapter: 统一 Modbus/Voxel/Sim 后端接口
 - 真 SSE 流式: token 级别实时输出
 

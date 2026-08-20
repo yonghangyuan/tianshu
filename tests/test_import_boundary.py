@@ -27,6 +27,7 @@ ALLOWED_HOT_IMPORTS = {
     "tianshu.diyao.providers.base", "tianshu.diyao.providers.deepseek",
     "tianshu.diyao.providers.registry",
     "tianshu.gateway", "tianshu.gateway.cli",
+    "tianshu.gateway.statusbar",
     "tianshu.gateway.server",
     "tianshu.renyao", "tianshu.renyao.skills",
     "tianshu.renyao.skills.manifest",

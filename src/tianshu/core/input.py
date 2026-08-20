@@ -19,11 +19,17 @@ def create_input_handler(
     model_names: list[str] | None = None,
     mode_callback: Any = None,  # Callable[[], str] — 切换模式，返回新模式名
     preset_callback: Any = None,  # Callable[[], str] — 切换预设（F2），返回新预设名
+    fullscreen: bool = True,     # 尝试 inline 状态栏（bottom_toolbar；历史参数名保留）
+    output_consoles: list | None = None,  # 兼容旧签名（inline 模式不接管输出）
+    prompt_text: Any = None,     # 兼容旧签名（inline 提示符由 prompt() 传入）
+    status_callback: Any = None,  # Callable[[], str] — 状态栏文本
 ) -> "InputHandler":
     """工厂函数：创建输入处理器。
 
-    自动检测 prompt_toolkit 可用性，选择最佳实现。
-    如果已在 async 事件循环中运行，降级到标准 input()。
+    优先级：inline 状态栏（PromptSession + bottom_toolbar，打字时常驻
+    模式/预设/token）→ PromptSession（无状态栏）→ 标准 input()。
+    不可用时（无 TTY / 无 prompt_toolkit / Git Bash / 已在 async 循环）
+    自动降级，行为与旧版一致。
     """
     import asyncio
     try:
@@ -33,6 +39,8 @@ def create_input_handler(
     except RuntimeError:
         pass
 
+    completer = None
+    pt_history = None
     try:
         from prompt_toolkit import PromptSession
         from prompt_toolkit.history import FileHistory
@@ -103,6 +111,22 @@ def create_input_handler(
         if history:
             for h in history:
                 pt_history.append_string(h)
+
+        # ── inline 状态栏（bottom_toolbar，打字时常驻）──
+        if fullscreen:
+            try:
+                from tianshu.gateway.statusbar import create_toolbar_handler
+                handler = create_toolbar_handler(
+                    completer=completer,
+                    history=pt_history,
+                    mode_callback=mode_callback,
+                    preset_callback=preset_callback,
+                    status_callback=status_callback,
+                )
+                if handler is not None:
+                    return handler
+            except Exception:
+                pass  # 状态栏失败 → 裸 PromptSession
 
         session = PromptSession(history=pt_history)
 

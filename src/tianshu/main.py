@@ -195,6 +195,7 @@ def _handle_model_command(
     user_input: str,
     registry,  # ProviderRegistry
     ctx,        # AgentContext
+    input_handler=None,  # 全屏时挂起执行菜单
 ) -> None:
     """处理 model 命令。"""
     parts = user_input.split(maxsplit=1)
@@ -215,7 +216,12 @@ def _handle_model_command(
             }
             for p in models
         ]
-        idx = select_menu("选择默认模型", options)
+
+        try:
+            idx = select_menu("选择默认模型", options)
+        except KeyboardInterrupt:
+            _rich_console.print("  [dim]已取消[/dim]")
+            return
         if idx is not None:
             chosen = models[idx]
             full = f"{chosen.provider_name}/{chosen.model_id}"
@@ -487,24 +493,47 @@ def _main_sync() -> None:
         from tianshu.core.presets import PRESET_ORDER
         nxt = PRESET_ORDER[(PRESET_ORDER.index(_preset) + 1) % len(PRESET_ORDER)]
         if nxt == "minimal":
-            # F2 回调在 prompt_toolkit 事件循环内，不能阻塞询问——
-            # 置待确认标记，主循环在下次 prompt() 前弹 y/n
+            # 置待确认标记，主循环在 prompt() 返回后立即弹 y/n——
+            # inline 模式 F2 按键在 prompt 内，返回后处理天然即时
             _preset_pending = nxt
         else:
             _apply_preset(nxt)
         return _preset
 
-    input_handler = create_input_handler(
-        commands=cmd_registry.command_names,
-        model_names=model_names,
-        mode_callback=_cycle_mode,
-        preset_callback=_cycle_preset,
-    )
+    renderer = StreamRenderer()
 
     def _prompt_text():
         m = ctx.metadata.get("model_override", "")
         model_part = m if m else "天枢"
         return f"{_mode_plain(_mode)}{_preset_plain(_preset)} {model_part}> "
+
+    def _status_bar_text():
+        """底部状态栏文本——模式/预设/token/缓存命中（会话累计）。
+
+        回合中由 _StatusLine 经 set_status 顶替（spinner 文本）。
+        """
+        from tianshu.gateway.statusbar import format_status_bar
+        try:
+            return format_status_bar(
+                _mode,
+                _preset,
+                renderer._total_cost.get("prompt", 0),
+                renderer._total_cost.get("completion", 0),
+                renderer._total_cost.get("cached", 0),
+                renderer._last_cost.get("elapsed", 0.0),
+            )
+        except Exception:
+            return ""
+
+    input_handler = None  # 预绑定：状态栏回调竞态安全
+    input_handler = create_input_handler(
+        commands=cmd_registry.command_names,
+        model_names=model_names,
+        mode_callback=_cycle_mode,
+        preset_callback=_cycle_preset,
+        fullscreen=True,  # inline 状态栏（bottom_toolbar）
+        status_callback=_status_bar_text,
+    )
 
     # ── 会话存储 ──
     from tianshu.memory.session_store import get_session_store
@@ -525,19 +554,16 @@ def _main_sync() -> None:
             _rich_console.print(f"  [dim]🔌 MCP: 无已配置的 server[/dim]")
     _rich_console.print()
 
-    renderer = StreamRenderer()
-
     # ── 同步主循环 ──
     while True:
-        # 预设进入确认（F2 触发——在同步环境询问，prompt_toolkit 回调内不能阻塞）
+        # 预设进入确认（F2 触发——走输入处理器的 y/n 询问，全屏/降级统一）
         if _preset_pending:
             pending, _preset_pending = _preset_pending, None
             _rich_console.print(
                 "[bold yellow]  极简模式: 仅 4 个工具(shell/edit_file/read_file/list_dir)，"
                 "跳过每次确认，策略引擎仍生效[/bold yellow]"
             )
-            ans = input("  进入极简模式? [y/N] ").strip().lower()
-            if ans in ("y", "yes"):
+            if input_handler.ask_yn("进入极简模式?"):
                 _apply_preset(pending)
             else:
                 _rich_console.print("  已取消")
@@ -562,16 +588,24 @@ def _main_sync() -> None:
             _show_models(core._registry)
             continue
         elif user_input in ("setup", "/setup"):
-            keys = run_setup_wizard()
+            def _do_setup():
+                keys = run_setup_wizard()
+                if keys:
+                    save_user_keys(keys)
+                return keys
+            try:
+                keys = _do_setup()
+            except KeyboardInterrupt:
+                _rich_console.print("  [dim]已取消[/dim]")
+                continue
             if keys:
-                save_user_keys(keys)
                 user_keys = load_user_keys()
                 registry = load_providers(providers_yaml, extra_keys=user_keys)
                 core.setup(registry=registry, routing=routing_config, system_prompt=system_prompt, db_path=str(_project_root / "tianshu.db"), skill_discover=True)
                 _rich_console.print(f"\n  ✅ 已保存 {len(keys)} 个 Key。")
             continue
         elif user_input.startswith("model ") or user_input.startswith("/model "):
-            _handle_model_command(user_input, core._registry, ctx)
+            _handle_model_command(user_input, core._registry, ctx, input_handler)
             continue
         elif user_input in ("skills", "/skills"):
             _show_skills(core.skills.loader, core.skills.observer)
@@ -892,25 +926,36 @@ def _main_sync() -> None:
             import time as _time
             _t0 = _time.time()
             _content_buf: list = []  # 工具执行期间缓冲内容
+            _turn_debug(f"turn start: input={resolved_input[:40]!r}")
 
-            with _rich_console.status(f"[bold #60a5fa]Thinking... (0.0s)", spinner="dots") as status:
+            with _StatusLine(input_handler, f"[bold #60a5fa]Thinking... (0.0s)") as status:
                 _tool_active = False
                 _content_started = False
                 _timer_task = None
 
+                _spinner_frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
                 async def _update_timer():
+                    i = 0
                     while True:
                         await asyncio.sleep(0.1)
                         elapsed = _time.time() - _t0
-                        status.update(f"[bold #60a5fa]Thinking... ({elapsed:.1f}s)")
+                        frame = _spinner_frames[i % len(_spinner_frames)]
+                        i += 1
+                        status.update(
+                            f"{frame} Thinking... ({elapsed:.1f}s)   "
+                            "[dim]Ctrl+C 取消[/dim]"
+                        )
 
                 _timer_task = asyncio.create_task(_update_timer())
 
                 try:
+                    _turn_debug("run_stream start")
                     async for event in core.run_stream(
                         AgentRequest(input=resolved_input, task_type="conversation"),
                         ctx=ctx,
                     ):
+                        _turn_debug(f"event: {type(event).__name__}")
                         if isinstance(event, ToolCallConfirm):
                             status.stop()
                             _handle_confirm(event, core)
@@ -938,6 +983,11 @@ def _main_sync() -> None:
                                 if not _content_started:
                                     status.stop()
                                     _content_started = True
+                                    # 内容开始输出 → 停掉 Thinking timer，
+                                    # 否则它每 0.1s 把状态栏覆盖回 Thinking
+                                    if _timer_task:
+                                        _timer_task.cancel()
+                                        _timer_task = None
                                     _flush_thinking(renderer, _rich_console)
                                 renderer.handle(event)  # 工具未激活→直接渲染
                         elif isinstance(event, StreamDone):
@@ -948,12 +998,21 @@ def _main_sync() -> None:
                             renderer.handle(event)
                         else:
                             renderer.handle(event)
+                    _turn_debug("run_stream done")
                 finally:
                     if _timer_task:
                         _timer_task.cancel()
 
+        async def _turn_driver():
+            """回合驱动：inline 模式下 PromptSession 不在前台，Ctrl+C 走
+            原生 KeyboardInterrupt（外层 except 已处理）——无取消竞速。"""
+            _turn_debug("turn_driver start (inline)")
+            turn_task = asyncio.create_task(_run_turn())
+            await turn_task
+            _turn_debug("turn_driver end")
+
         try:
-            asyncio.run(_run_turn())
+            asyncio.run(_turn_driver())
         except KeyboardInterrupt:
             _rich_console.print("\n  [dim]已取消[/dim]")
         except Exception as e:
@@ -1000,6 +1059,11 @@ def _main_sync() -> None:
             ctx.shell.stop()
         except Exception:
             pass
+    # 退出全屏 UI：恢复标准流与终端（之后打印到真实终端）
+    try:
+        input_handler.close()
+    except Exception:
+        pass
     _rich_console.print("[dim]天枢已关闭[/dim]")
 
 
@@ -1009,6 +1073,9 @@ def _show_status(core, renderer) -> None:
     _rich_console.print(f"  模型: [cyan]{cost.get('model', '?')}[/cyan]")
     _rich_console.print(f"  模式: [dim]{core._mode}[/dim]")
     _rich_console.print(f"  预设: [dim]{getattr(core, '_preset', 'standard')}[/dim]")
+    if cost:
+        hit = _cache_hit_str(cost.get('cached', 0), cost.get('prompt', 0))
+        _rich_console.print(f"  Token: ↓{cost.get('prompt',0)//1000}K ↑{cost.get('completion',0)//1000}K · ⚡缓存命中 {hit}")
     _rich_console.print(f"  记忆: {asyncio.run(core.memory.count())} 条")
     _rich_console.print(f"  子Agent: {core.orchestrator.active_count} 活跃")
     _rich_console.print(f"  项目: [dim]{getattr(core, '_project_slug', '?')}[/dim]")
@@ -1069,6 +1136,81 @@ def _save_project_memory(core) -> None:
     _rich_console.print(f"  ✅ 已保存 {len(recent)} 条记忆 → {mem}\n")
 
 
+def _cache_hit_str(cached: int, prompt: int) -> str:
+    """缓存命中率展示：cached/prompt，prompt=0 时显示 –。"""
+    if not prompt:
+        return "–"
+    return f"{cached / prompt * 100:.0f}%"
+
+
+def _strip_markup(text: str) -> str:
+    """剥掉 rich 标记（[bold ...]）——状态栏纯文本渲染用。"""
+    import re as _re
+    return _re.sub(r"\[/?[^\]]*?\]", "", text)
+
+
+def _turn_debug(msg: str) -> None:
+    """回合诊断日志（TIANSHU_DEBUG=1 时启用）——真机卡死定位用。"""
+    import os as _os
+    if not _os.environ.get("TIANSHU_DEBUG"):
+        return
+    try:
+        from pathlib import Path as _P
+        _log = _P.home() / ".tianshu" / "turn_debug.log"
+        _log.parent.mkdir(parents=True, exist_ok=True)
+        with open(_log, "a", encoding="utf-8") as f:
+            f.write(f"{time.time():.3f} {msg}\n")
+    except Exception:
+        pass
+
+
+class _StatusLine:
+    """回合内状态显示——inline 模式走 rich Status（终端不接管，spinner 可用）。
+
+    有 set_status 的输入处理器（ToolbarHandler）同步把剥掉标记的文本
+    存进 status_override，供打字期间 toolbar 显示回合中状态。
+    """
+
+    def __init__(self, input_handler, text: str) -> None:
+        self._handler = input_handler
+        self._text = text
+        self._rich = None
+
+    def __enter__(self):
+        set_status = getattr(self._handler, "set_status", None)
+        if set_status is not None:
+            set_status(_strip_markup(self._text))
+        self._rich = _rich_console.status(self._text, spinner="dots")
+        self._rich.__enter__()
+        return self
+
+    def update(self, text: str) -> None:
+        set_status = getattr(self._handler, "set_status", None)
+        if set_status is not None:
+            set_status(_strip_markup(text))
+        if self._rich is not None:
+            self._rich.update(text)
+
+    def stop(self) -> None:
+        set_status = getattr(self._handler, "set_status", None)
+        if set_status is not None:
+            set_status("")
+        if self._rich is not None:
+            self._rich.stop()
+
+    def start(self) -> None:
+        if self._rich is not None:
+            self._rich.start()
+
+    def __exit__(self, *exc) -> bool:
+        set_status = getattr(self._handler, "set_status", None)
+        if set_status is not None:
+            set_status("")
+        if self._rich is not None:
+            self._rich.__exit__(*exc)
+        return False
+
+
 def _show_cost(renderer) -> None:
     """显示最近一次 + 会话累计 token 消耗。"""
     cost_info = getattr(renderer, '_last_cost', None)
@@ -1076,12 +1218,16 @@ def _show_cost(renderer) -> None:
     if not cost_info:
         _rich_console.print("[dim]暂无消耗数据[/dim]")
         return
+    last_hit = _cache_hit_str(cost_info.get('cached', 0), cost_info.get('prompt', 0))
     _rich_console.print(
-        f"  上次: ↓{cost_info.get('prompt',0)//1000}K ↑{cost_info.get('completion',0)//1000}K  {cost_info.get('elapsed',0):.1f}s"
+        f"  上次: ↓{cost_info.get('prompt',0)//1000}K ↑{cost_info.get('completion',0)//1000}K  "
+        f"⚡缓存命中 {last_hit}  {cost_info.get('elapsed',0):.1f}s"
     )
     if total["prompt"] > cost_info.get("prompt", 0):
+        total_hit = _cache_hit_str(total.get("cached", 0), total["prompt"])
         _rich_console.print(
-            f"  累计: ↓{total['prompt']//1000}K ↑{total['completion']//1000}K  [dim]{cost_info.get('model','')}[/dim]"
+            f"  累计: ↓{total['prompt']//1000}K ↑{total['completion']//1000}K  "
+            f"⚡缓存命中 {total_hit}  [dim]{cost_info.get('model','')}[/dim]"
         )
     _rich_console.print()
 
