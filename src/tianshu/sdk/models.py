@@ -179,6 +179,7 @@ class AgentResponse:
     elapsed_ms: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0  # 命中 Prompt Cache 的 token 数
     error: str = ""
 
 
@@ -263,6 +264,7 @@ class StreamDone(StreamEvent):
     elapsed_ms: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0  # 命中 Prompt Cache 的 token 数
     tool_count: int = 0
     error: str = ""
 

@@ -68,7 +68,7 @@ class StreamRenderer:
         self._t0 = time.time()
         self._flushed_len = 0  # 已 flush 的字符数
         self._last_cost: dict = {}  # /cost 查询用
-        self._total_cost: dict = {"prompt": 0, "completion": 0}  # 会话累计
+        self._total_cost: dict = {"prompt": 0, "completion": 0, "cached": 0}  # 会话累计
 
     def reset(self) -> None:
         self._content_buf.clear()
@@ -148,11 +148,13 @@ class StreamRenderer:
             self._last_cost = {
                 "prompt": event.prompt_tokens,
                 "completion": event.completion_tokens,
+                "cached": event.cached_tokens,
                 "elapsed": event.elapsed_ms / 1000.0,
                 "model": event.model_used,
             }
             self._total_cost["prompt"] += event.prompt_tokens
             self._total_cost["completion"] += event.completion_tokens
+            self._total_cost["cached"] += event.cached_tokens
             # 渲染剩余内容（段落边界之后的部分）
             full = "".join(self._content_buf)
             remaining = full[self._flushed_len:].strip()
@@ -367,8 +369,22 @@ async def chat_once(
     return ctx
 
 
-def _handle_confirm(event: ToolCallConfirm, core) -> None:
-    """处理工具确认事件——← → 选择，Enter 确认。"""
+def _apply_confirm_choice(core, event: ToolCallConfirm, choice: str) -> None:
+    """应用确认选择——y 允许 / n 拒绝 / a 始终允许（进白名单）。两条路径共用。"""
+    if choice == "a":
+        core._confirm_allowed = True
+        if not hasattr(core, '_permission_whitelist'):
+            core._permission_whitelist = set()
+        core._permission_whitelist.add(event.tool_name)
+        core.confirm_tool(True)
+    elif choice == "y":
+        core.confirm_tool(True)
+    else:  # n / cancel
+        core.confirm_tool(False)
+
+
+def _handle_confirm(event: ToolCallConfirm, core, ui=None) -> None:
+    """处理工具确认事件——ui 路径走全屏确认行；ui=None 走 msvcrt 旧路径。"""
     import sys as _sys
 
     perm_label = {0: "SAFE", 1: "READ", 2: "WRITE", 3: "DANGER"}
@@ -381,6 +397,13 @@ def _handle_confirm(event: ToolCallConfirm, core) -> None:
         ("n", "拒绝", "red"),
         ("a", f"始终允许 {event.tool_name}", "yellow"),
     ]
+
+    # ── 全屏 UI 路径 ──
+    if ui is not None:
+        choice = ui.ask_confirm(options, default_idx=0)
+        _apply_confirm_choice(core, event, choice)
+        return
+
     idx = 0  # 默认选中 "允许"
 
     def _draw():
@@ -430,16 +453,7 @@ def _handle_confirm(event: ToolCallConfirm, core) -> None:
             break
 
     choice = options[idx][0]
-    if choice == "a":
-        core._confirm_allowed = True
-        if not hasattr(core, '_permission_whitelist'):
-            core._permission_whitelist = set()
-        core._permission_whitelist.add(event.tool_name)
-        core.confirm_tool(True)
-    elif choice == "y":
-        core.confirm_tool(True)
-    else:
-        core.confirm_tool(False)
+    _apply_confirm_choice(core, event, choice)
 
 
 def _get_keypress() -> str:

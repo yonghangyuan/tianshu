@@ -228,6 +228,8 @@ class OpenAICompatibleProvider(BaseProvider):
             prompt_tokens=usage_raw.get("prompt_tokens", 0),
             completion_tokens=usage_raw.get("completion_tokens", 0),
             total_tokens=usage_raw.get("total_tokens", 0),
+            # Prompt Cache 命中 token 数（DeepSeek 等厂商；未命中恒为 0）
+            cached_prompt_tokens=usage_raw.get("prompt_cache_hit_tokens", 0),
         )
 
         return ProviderResponse(
@@ -412,6 +414,9 @@ class OpenAICompatibleProvider(BaseProvider):
                 prompt_tokens=usage_raw.get("prompt_tokens", 0),
                 completion_tokens=usage_raw.get("completion_tokens", 0),
                 total_tokens=usage_raw.get("total_tokens", 0),
+                # Prompt Cache 命中 token 数（流式路径——DeepSeek 不覆写
+                # _parse_stream_chunk，此洞必须在这里补）
+                cached_prompt_tokens=usage_raw.get("prompt_cache_hit_tokens", 0),
             )
 
         # 如果没有任何有效内容，跳过

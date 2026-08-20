@@ -372,6 +372,7 @@ class AgentCore:
         final_content = ""
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        total_cached_tokens = 0
 
         for _ in range(10):  # MAX_TOOL_ROUNDS
             try:
@@ -392,6 +393,7 @@ class AgentCore:
                 self._last_reasoning = resp.reasoning_content
             total_prompt_tokens += resp.usage.prompt_tokens
             total_completion_tokens += resp.usage.completion_tokens
+            total_cached_tokens += resp.usage.cached_prompt_tokens
 
             # 无工具调用 → 最终回复
             if not resp.tool_calls:
@@ -533,6 +535,7 @@ class AgentCore:
             elapsed_ms=elapsed,
             prompt_tokens=total_prompt_tokens,
             completion_tokens=total_completion_tokens,
+            cached_tokens=total_cached_tokens,
         )
 
     async def run_stream(
@@ -681,6 +684,7 @@ class AgentCore:
         final_content = ""
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        total_cached_tokens = 0
         tool_count = 0
         _last_tool_signatures: list[str] = []
 
@@ -741,6 +745,7 @@ class AgentCore:
                     if chunk.usage:
                         total_prompt_tokens += chunk.usage.prompt_tokens
                         total_completion_tokens += chunk.usage.completion_tokens
+                        total_cached_tokens += chunk.usage.cached_prompt_tokens
 
             except Exception as e:
                 error_msg, recovery = _classify_error(e, provider.provider_name, model_id)
@@ -1118,6 +1123,7 @@ class AgentCore:
             elapsed_ms=elapsed,
             prompt_tokens=total_prompt_tokens,
             completion_tokens=total_completion_tokens,
+            cached_tokens=total_cached_tokens,
             tool_count=tool_count,
             error="" if final_content else "(empty response)",
         )

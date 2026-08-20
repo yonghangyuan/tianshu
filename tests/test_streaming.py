@@ -349,6 +349,69 @@ class TestRunStream:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+class TestCacheUsageParsing:
+    """Prompt Cache 命中 token 的解析——非流式与流式两条路径。"""
+
+    def test_parse_stream_chunk_cache_hit(self):
+        """流式 usage 含 prompt_cache_hit_tokens → cached_prompt_tokens。"""
+        provider = _make_dummy_provider()
+        data = {
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": 1000, "completion_tokens": 50,
+                "total_tokens": 1050, "prompt_cache_hit_tokens": 800,
+            },
+        }
+        chunk = provider._parse_stream_chunk(data, {})
+        assert chunk is not None
+        assert chunk.usage.cached_prompt_tokens == 800
+
+    def test_parse_stream_chunk_cache_default_zero(self):
+        """无 prompt_cache_hit_tokens 字段 → 默认 0。"""
+        provider = _make_dummy_provider()
+        data = {
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110},
+        }
+        chunk = provider._parse_stream_chunk(data, {})
+        assert chunk is not None
+        assert chunk.usage.cached_prompt_tokens == 0
+
+    def test_parse_response_cache_hit(self):
+        """非流式响应解析同样带缓存命中。"""
+        provider = _make_dummy_provider()
+        raw = {
+            "choices": [{"index": 0, "message": {"content": "hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1000, "completion_tokens": 50,
+                      "total_tokens": 1050, "prompt_cache_hit_tokens": 900},
+            "model": "test-model",
+        }
+        resp = provider._parse_response(raw)
+        assert resp.usage.cached_prompt_tokens == 900
+
+
+class TestCachedTokenFields:
+    """StreamDone / AgentResponse 缓存字段。"""
+
+    def test_stream_done_cached_default(self):
+        e = StreamDone()
+        assert e.cached_tokens == 0
+
+    def test_stream_done_cached_explicit(self):
+        e = StreamDone(cached_tokens=123)
+        assert e.cached_tokens == 123
+
+    def test_agent_response_cached_default(self):
+        from tianshu.sdk.models import AgentResponse
+        r = AgentResponse()
+        assert r.cached_tokens == 0
+
+    def test_agent_response_cached_explicit(self):
+        from tianshu.sdk.models import AgentResponse
+        r = AgentResponse(cached_tokens=456)
+        assert r.cached_tokens == 456
+
+
 def _sse_tool_call(name: str, args: dict, call_id: str = "call_001") -> list[str]:
     """构造一次工具调用的 canned SSE 行。"""
     d1 = {"id": "chatcmpl-9", "object": "chat.completion.chunk",
