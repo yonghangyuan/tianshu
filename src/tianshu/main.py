@@ -452,9 +452,8 @@ def _main_sync() -> None:
         # 反馈只在底部状态栏（mode 已入 format_status_bar），不刷屏
         return _mode
 
-    # ── 预设系统（与模式正交：standard / minimal / code）──
+    # ── 预设系统（与模式正交：standard / minimal / code + YAML 自定义）──
     _preset = "standard"
-    _preset_pending = None  # F2 请求进入 minimal 的待确认标记
 
     def _preset_plain(p: str) -> str:
         return {"standard": "", "minimal": "◆", "code": "✧"}.get(p, "")
@@ -474,17 +473,10 @@ def _main_sync() -> None:
         core._preset = p
         # 反馈只在底部状态栏（preset 已入 format_status_bar），不刷屏
 
-    def _cycle_preset():
-        nonlocal _preset, _preset_pending
-        from tianshu.core.presets import preset_order
-        order = preset_order()
-        nxt = order[(order.index(_preset) + 1) % len(order)] if _preset in order else order[0]
-        if nxt == "minimal":
-            # 置待确认标记，主循环在 prompt() 返回后立即弹 y/n——
-            # inline 模式 F2 按键在 prompt 内，返回后处理天然即时
-            _preset_pending = nxt
-        else:
-            _apply_preset(nxt)
+    def _preset_cb(p: str | None = None) -> str:
+        """双向：无参=读当前预设；传参=应用（F2 闸门确认后由 handler 调）。"""
+        if p is not None:
+            _apply_preset(p)
         return _preset
 
     renderer = StreamRenderer()
@@ -517,7 +509,8 @@ def _main_sync() -> None:
         commands=cmd_registry.command_names,
         model_names=model_names,
         mode_callback=_cycle_mode,
-        preset_callback=_cycle_preset,
+        preset_callback=_preset_cb,
+        preset_gate=True,  # 敏感预设 F2 闸门（handler 内弹 y/N）
         fullscreen=True,  # inline 状态栏（bottom_toolbar）
         status_callback=_status_bar_text,
     )
@@ -543,19 +536,6 @@ def _main_sync() -> None:
 
     # ── 同步主循环 ──
     while True:
-        # 预设进入确认（F2 触发——走输入处理器的 y/n 询问，全屏/降级统一）
-        if _preset_pending:
-            pending, _preset_pending = _preset_pending, None
-            _rich_console.print(
-                "[bold yellow]  极简模式: 仅 4 个工具(shell/edit_file/read_file/list_dir)，"
-                "跳过每次确认，策略引擎仍生效[/bold yellow]"
-            )
-            if input_handler.ask_yn("进入极简模式?"):
-                _apply_preset(pending)
-            else:
-                _rich_console.print("  已取消")
-            continue
-
         try:
             user_input = input_handler.prompt(_prompt_text()).strip()
         except (EOFError, KeyboardInterrupt):

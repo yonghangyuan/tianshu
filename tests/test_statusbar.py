@@ -126,3 +126,70 @@ def test_create_toolbar_handler_none_when_ptk_missing(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", _fake_import)
     assert create_toolbar_handler() is None
+
+
+# ── F2 预设闸门（敏感预设进入确认）─────────────────────────────────────────
+
+
+class _FakeBuffer:
+    read_only = False
+
+
+class _FakeApp:
+    current_buffer = _FakeBuffer()
+
+
+class _FakeEvent:
+    app = _FakeApp()
+
+
+class TestPresetGate:
+    def _handler(self):
+        from tianshu.core.presets import reload_presets
+        reload_presets()
+        state = {"preset": "standard", "applied": []}
+
+        def cb(p=None):
+            if p is not None:
+                state["applied"].append(p)
+                state["preset"] = p
+            return state["preset"]
+
+        h = ToolbarHandler(session=None, preset_callback=cb, preset_gate=True)
+        return h, state
+
+    def test_gate_activates_for_minimal(self):
+        h, state = self._handler()
+        h._cycle_preset(_FakeEvent())
+        assert h._gate_active is True
+        assert "进入" in h.status_override
+        assert state["preset"] == "standard"  # 未应用
+
+    def test_gate_yes_applies(self):
+        h, state = self._handler()
+        h._cycle_preset(_FakeEvent())
+        h._gate_answer(True)
+        assert state["applied"] == ["minimal"]
+        assert h._gate_active is False
+        assert h.status_override == ""
+
+    def test_gate_no_cancels(self):
+        h, state = self._handler()
+        h._cycle_preset(_FakeEvent())
+        h._gate_answer(False)
+        assert state["applied"] == []
+        assert state["preset"] == "standard"
+
+    def test_code_switches_directly(self):
+        h, state = self._handler()
+        state["preset"] = "minimal"
+        h._cycle_preset(_FakeEvent())
+        assert state["applied"] == ["code"]  # 免闸门直接切
+        assert h._gate_active is False
+
+    def test_gate_blocks_f2_while_active(self):
+        h, _ = self._handler()
+        h._cycle_preset(_FakeEvent())       # 闸门开
+        applied_before = h._gate_target
+        h._cycle_preset(_FakeEvent())       # 再按 F2 → 忽略
+        assert h._gate_target == applied_before

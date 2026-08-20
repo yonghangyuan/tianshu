@@ -68,13 +68,22 @@ class ToolbarHandler:
         mode_callback: Callable | None = None,
         preset_callback: Callable | None = None,
         status_callback: Callable[[], str] | None = None,
+        preset_gate: Callable[[str, Callable[[bool], None]], None] | None = None,
     ) -> None:
+        """preset_gate(target, apply): 进敏感预设（minimal）前弹 y/N 确认。
+
+        在 F2 按键绑定内同步调用——inline 模式下不能等主循环（用户还
+        在 prompt 里打字）。apply(True/False) 回调应用/取消。
+        """
         self._session = session
         self._completer = completer
         self._mode_callback = mode_callback
         self._preset_callback = preset_callback
         self._status_callback = status_callback
-        self.status_override = ""  # 回合中 spinner 文本（非空时顶替状态栏）
+        self._preset_gate = preset_gate
+        self.status_override = ""  # 回合中 spinner 文本 / 闸门提示（非空顶替状态栏）
+        self._gate_active = False
+        self._gate_target = ""
 
     # ── InputHandler 接口 ────────────────────────────────────────────
 
@@ -99,10 +108,23 @@ class ToolbarHandler:
         # ── F2: 切换预设 (standard/minimal/code) ──
         @kb.add("f2")
         def _(event):
-            if self._preset_callback:
-                self._preset_callback()
+            self._cycle_preset(event)
+            # 纯按键（输入缓冲无变化）不会触发重绘——强制重算 toolbar
             event.app.renderer.clear()
             event.app.invalidate()
+
+        # ── y/n: preset_gate 弹窗中确认/取消 ──
+        @kb.add("y", filter=self._gate_filter)
+        def _(event):
+            self._gate_answer(True)
+
+        @kb.add("n", filter=self._gate_filter)
+        def _(event):
+            self._gate_answer(False)
+
+        @kb.add("escape", "c-c", filter=self._gate_filter)
+        def _(event):
+            self._gate_answer(False)
 
         # ── Alt+Enter: 插入换行 ──
         @kb.add("escape", "enter")
@@ -144,6 +166,54 @@ class ToolbarHandler:
 
     def add_to_history(self, text: str) -> None:
         pass  # PromptSession history 自动管理
+
+    # ── F2 预设循环 + minimal 进入闸门 ─────────────────────────────
+
+    def _cycle_preset(self, event) -> None:
+        """F2 按键处理：下一预设；目标为敏感预设时先弹 y/N 闸门。"""
+        if self._gate_active:
+            return  # 闸门开着时 F2 不响应（先答 y/n）
+        from tianshu.core.presets import cycle_preset, get_preset
+        current = self._preset_callback() if self._preset_callback else "standard"
+        nxt = cycle_preset(current)
+        target = get_preset(nxt)
+        if target.skip_confirm and self._preset_gate is not None:
+            # 敏感预设（免确认类）→ 闸门 y/N：提示进状态栏，输入缓冲冻结
+            n_tools = len(target.allowlist) if target.allowlist else "全部"
+            self._gate_active = True
+            self._gate_target = nxt
+            self.status_override = f" ⚠ {target.label}: 仅 {n_tools} 工具且免确认，进入? [y/N]"
+            event.app.current_buffer.read_only = lambda: True  # type: ignore[assignment]
+        else:
+            self._apply_preset(nxt)
+
+    def _gate_answer(self, yes: bool) -> None:
+        """闸门应答：y 应用目标预设，n/Esc 取消。"""
+        if not self._gate_active:
+            return
+        self._gate_active = False
+        target, self._gate_target = self._gate_target, ""
+        app = getattr(self._session, "app", None)
+        if app is not None:
+            app.current_buffer.read_only = lambda: False  # type: ignore[assignment]
+        self.status_override = ""
+        if yes:
+            self._apply_preset(target)
+
+    def _apply_preset(self, name: str) -> None:
+        """应用预设并通知外部（preset_callback 双向：传参=设定）。"""
+        self.status_override = ""
+        if self._preset_callback is not None:
+            try:
+                self._preset_callback(name)
+            except TypeError:
+                self._preset_callback()  # 旧签名兼容
+
+    @property
+    def _gate_filter(self):
+        """闸门激活时才吃 y/n/Esc 键。"""
+        from prompt_toolkit.filters import Condition
+        return Condition(lambda: self._gate_active)
 
     def ask_yn(self, text: str) -> bool | None:
         try:
@@ -193,6 +263,7 @@ def create_toolbar_handler(
     history: Any = None,
     mode_callback: Callable | None = None,
     preset_callback: Callable | None = None,
+    preset_gate: Any = True,
     status_callback: Callable[[], str] | None = None,
 ) -> "ToolbarHandler | None":
     """创建 inline 状态栏处理器；不可用（无 TTY/Git Bash/无 ptk）返回 None。"""
@@ -206,6 +277,7 @@ def create_toolbar_handler(
             completer=completer,
             mode_callback=mode_callback,
             preset_callback=preset_callback,
+            preset_gate=preset_gate,
             status_callback=status_callback,
         )
     except Exception:

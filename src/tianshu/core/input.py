@@ -18,7 +18,8 @@ def create_input_handler(
     commands: list[str] | None = None,
     model_names: list[str] | None = None,
     mode_callback: Any = None,  # Callable[[], str] — 切换模式，返回新模式名
-    preset_callback: Any = None,  # Callable[[], str] — 切换预设（F2），返回新预设名
+    preset_callback: Any = None,  # Callable — 无参读当前预设；传名应用（F2 闸门确认后）
+    preset_gate: Any = True,     # 敏感预设（免确认类）F2 进入前弹 y/N 闸门
     fullscreen: bool = True,     # 尝试 inline 状态栏（bottom_toolbar；历史参数名保留）
     output_consoles: list | None = None,  # 兼容旧签名（inline 模式不接管输出）
     prompt_text: Any = None,     # 兼容旧签名（inline 提示符由 prompt() 传入）
@@ -121,6 +122,7 @@ def create_input_handler(
                     history=pt_history,
                     mode_callback=mode_callback,
                     preset_callback=preset_callback,
+                    preset_gate=preset_gate,
                     status_callback=status_callback,
                 )
                 if handler is not None:
