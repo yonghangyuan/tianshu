@@ -128,6 +128,8 @@ def _html_doc_to_pdf(html_doc: str, pdf_path: Path) -> Path:
         cmd = [
             exe,
             "--headless=new", "--no-first-run", "--disable-gpu",
+            # Linux/CI 环境必需：无沙箱运行（容器内 namespace 受限）+ 防 /dev/shm 过小崩
+            "--no-sandbox", "--disable-dev-shm-usage",
             "--no-pdf-header-footer",
             f"--user-data-dir={user_data}",
             f"--print-to-pdf={pdf_path}",
