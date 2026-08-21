@@ -25,6 +25,9 @@ _BROWSER_CANDIDATES = [
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/local/bin/chrome",
 ]
 
 _PRINT_CSS = """
@@ -61,10 +64,17 @@ a { color: #1a4d8f; text-decoration: none; }
 # ── 核心引擎 ──────────────────────────────────────────────────────────────
 
 def _find_browser() -> str:
-    """探测 Edge/Chrome 可执行文件路径。"""
-    exe = shutil.which("msedge") or shutil.which("chrome") or shutil.which("chromium")
-    if exe:
-        return exe
+    """探测 Edge/Chrome 可执行文件路径。
+
+    顺序讲究：msedge(Windows) → google-chrome-stable/google-chrome(Linux 官方
+    deb 装的真实 Chrome，CI runner 预装) → chrome → chromium 最后——
+    Ubuntu 的 /usr/bin/chromium 常是 snap 包装器，CI 容器里 snapd 不可用，
+    headless 会挂死（超时），只作为最后回退。
+    """
+    for name in ("msedge", "google-chrome-stable", "google-chrome", "chrome", "chromium"):
+        exe = shutil.which(name)
+        if exe:
+            return exe
     for p in _BROWSER_CANDIDATES:
         if Path(p).exists():
             return p
