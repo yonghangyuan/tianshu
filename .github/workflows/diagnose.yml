@@ -2,6 +2,7 @@ name: Diagnose
 
 on:
   workflow_dispatch:  # 手动触发
+  push:              # 推送也跑（临时诊断期）
 
 jobs:
   ubuntu:
@@ -16,5 +17,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[all]"
           pip install pytest pytest-asyncio
-      - name: Run tests (verbose failures)
-        run: pytest tests/ -x --tb=long -q 2>&1 | tail -80
+      - name: Run tests
+        run: |
+          set -o pipefail
+          pytest tests/ -q --tb=short 2>&1 | tee /tmp/pytest.out || true
+          echo "## 摘要"
+          grep -E "^FAILED|failed|passed|error" /tmp/pytest.out | head -40
+          # 失败摘要变成 annotation —— 匿名 API 可读
+          grep -E "^FAILED" /tmp/pytest.out | while read -r line; do
+            echo "::error::${line}"
+          done
+          # 无 FAILED 行但整体失败 → 输出收集错误
+          if ! grep -q "^FAILED" /tmp/pytest.out; then
+            tail -30 /tmp/pytest.out | while read -r line; do
+              echo "::error::${line:0:200}"
+            done
+          fi
+          exit 1
