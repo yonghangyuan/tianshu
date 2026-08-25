@@ -96,6 +96,57 @@ class TestRouter:
         assert mid == "deepseek-v4-pro"
         assert level == AuditLevel.FULL
 
+    def test_route_direct_native_id_not_prefixed(self):
+        """Ollama 类自带族名+tag 的 id 不该被补前缀（曾全灭根因）。
+
+        route_direct("ollama", "qwen3:30b") 补成 "ollama-qwen3:30b" 必查空
+        → "No model available"。修复：原始 id 先查，未命中再补。
+        """
+        from tianshu.core.router import ModelRouter, RoutingConfig
+
+        reg = ProviderRegistry()
+
+        def _mock(oid):
+            class M(BaseProvider):
+                provider_name = "ollama"
+                model_id = oid
+                async def chat(self, messages, **kw):
+                    return ProviderResponse(content="ok")
+                async def is_available(self):
+                    return True
+            return M()
+
+        for native in ("qwen3:30b", "llama3.2:latest", "deepseek-r1:7b"):
+            reg.register(_mock(native))
+        router = ModelRouter(RoutingConfig(), reg)
+        for native in ("qwen3:30b", "llama3.2:latest", "deepseek-r1:7b"):
+            p, mid, _ = router.route_direct("ollama", native)
+            assert p is not None, f"{native} 被误补前缀"
+            assert mid == native
+
+    def test_route_pref_native_id(self):
+        """prefer 条目同样先按原样解析（离线兜底 ollama/llama3.2:latest 场景）。"""
+        import asyncio
+        from tianshu.core.router import ModelRouter, RoutingConfig, RoutingRule
+
+        reg = ProviderRegistry()
+        class MockOllama(BaseProvider):
+            provider_name = "ollama"
+            model_id = "llama3.2:latest"
+            async def chat(self, messages, **kw):
+                return ProviderResponse(content="ok")
+            async def is_available(self):
+                return True
+
+        reg.register(MockOllama())
+        cfg = RoutingConfig(rules=[RoutingRule(
+            task_types=["conversation"], prefer=["ollama/llama3.2:latest"],
+        )])
+        router = ModelRouter(cfg, reg)
+        p, mid, _ = asyncio.run(router.route("conversation"))
+        assert p is not None
+        assert mid == "llama3.2:latest"
+
 
 class TestTrigramChannel:
     """三爻消息通道 demo —— 天·人·地三层验证。"""

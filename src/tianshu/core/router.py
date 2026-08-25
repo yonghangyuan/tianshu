@@ -63,32 +63,36 @@ class ModelRouter:
             if task_type in rule.task_types:
                 for pref in rule.prefer:
                     provider_name, model_id = self._parse_pref(pref)
+                    provider_name, model_id = self._resolve_pref(provider_name, model_id)
                     provider = self._registry.get(provider_name, model_id)
                     if provider is not None:
                         return provider, model_id, self._audit_level(task_type)
 
         # 2. fallback
         fb_provider_name, fb_model_id = self._parse_pref(self._fallback)
+        fb_provider_name, fb_model_id = self._resolve_pref(fb_provider_name, fb_model_id)
         provider = self._registry.get(fb_provider_name, fb_model_id)
         return provider, fb_model_id, self._audit_level(task_type)
 
+    def _resolve_pref(self, provider_name: str, model_id: str) -> tuple[str, str]:
+        """prefer 条目解析：原样命中优先，未命中再补厂商前缀（同 route_direct）。"""
+        if self._registry.get(provider_name, model_id) is not None:
+            return provider_name, model_id
+        prefix = f"{provider_name}-"
+        if not model_id.startswith(prefix):
+            model_id = prefix + model_id
+        return provider_name, model_id
+
     @staticmethod
     def _parse_pref(pref: str) -> tuple[str, str]:
-        """解析 "deepseek/chat" → ("deepseek", "deepseek-chat")。
+        """拆分 "deepseek/chat" → ("deepseek", "chat")。
 
-        如果 model 部分不含 "-"，自动补全：deepseek/chat → deepseek-chat。
+        只拆不改写——补前缀统一由 _resolve_pref 做（原样命中优先，
+        避免误伤 Ollama 的 "llama3.2:latest" 这类自带族名+tag 的 id）。
         """
         parts = pref.split("/", 1)
         name = parts[0]
         model = parts[1] if len(parts) > 1 else ""
-
-        # 如果 model 不包含 provider 前缀，自动补全
-        # 修正: 之前用 "-" 判断，但 v4-pro/v4-flash 包含 "-" 被误跳过
-        if model and not model.startswith(f"{name}-"):
-            model = f"{name}-{model}"
-        elif not model:
-            model = ""
-
         return name, model
 
     @staticmethod
@@ -104,13 +108,18 @@ class ModelRouter:
         """用户直接指定模型，不走路由规则。
 
         Args:
-            provider_name: 如 "deepseek"
+            provider_name: 如 "deepseek"、"ollama"
             model_id: 如 "v4-pro" 或 "deepseek-v4-pro"
 
         Returns:
             (provider, full_model_id, audit_level)
         """
-        # 补全 model_id：如果 model_id 不以 provider_name- 开头，自动补
+        # 先按原始 id 查（Ollama 等自带族名+tag 的 id 不该被改写：
+        # "llama3.2:latest" 补成 "ollama-llama3.2:latest" 必查空）
+        provider = self._registry.get(provider_name, model_id)
+        if provider is not None:
+            return provider, model_id, AuditLevel.FULL
+        # 查不到再补前缀（云端厂商简写：v4-pro → deepseek-v4-pro）
         prefix = f"{provider_name}-"
         full_model_id = model_id if model_id.startswith(prefix) else prefix + model_id
         provider = self._registry.get(provider_name, full_model_id)
