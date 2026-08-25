@@ -231,7 +231,9 @@ class ToolbarHandler:
         app = getattr(self._session, "app", None) or getattr(event, "app", None)
         if app is not None:
             try:
-                app.current_buffer.read_only = True
+                # read_only 必须是可调用（ptk 内置 filter 会调 read_only()），
+                # 裸 bool 会炸 'bool' object is not callable——同 F2 闸门写法
+                app.current_buffer.read_only = lambda: True
             except Exception:
                 pass
 
@@ -256,7 +258,7 @@ class ToolbarHandler:
         app = getattr(self._session, "app", None) or getattr(event, "app", None)
         if app is not None:
             try:
-                app.current_buffer.read_only = False
+                app.current_buffer.read_only = lambda: False
             except Exception:
                 pass
 
