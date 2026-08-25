@@ -95,6 +95,10 @@ class ToolbarHandler:
         self.status_override = ""  # 回合中 spinner 文本 / 闸门提示（非空顶替状态栏）
         self._gate_active = False
         self._gate_target = ""
+        # F4 模型菜单状态（active 期间 ↑↓/Enter/Esc 由菜单接管）
+        self._menu_active = False
+        self._menu_options: list[dict] = []
+        self._menu_index = 0
 
     # ── InputHandler 接口 ────────────────────────────────────────────
 
@@ -124,10 +128,31 @@ class ToolbarHandler:
             event.app.renderer.clear()
             event.app.invalidate()
 
-        # ── F4: 模型选择菜单（↑↓/Enter，Esc 取消）──
+        # ── F4: 模型选择菜单（状态栏内嵌，↑↓/Enter/Esc）──
         @kb.add("f4")
         def _(event):
-            self._pick_model(event)
+            self._open_model_menu(event)
+
+        # ── ↑↓/Enter/Esc/q: F4 菜单激活时导航（filter 接管）──
+        @kb.add("up", filter=self._menu_filter)
+        def _(event):
+            self._menu_navigate(-1, event)
+
+        @kb.add("down", filter=self._menu_filter)
+        def _(event):
+            self._menu_navigate(1, event)
+
+        @kb.add("enter", filter=self._menu_filter)
+        def _(event):
+            self._menu_confirm(event)
+
+        @kb.add("escape", filter=self._menu_filter)
+        def _(event):
+            self._menu_cancel(event)
+
+        @kb.add("q", filter=self._menu_filter)
+        def _(event):
+            self._menu_cancel(event)
 
         # ── y/n: preset_gate 弹窗中确认/取消 ──
         @kb.add("y", filter=self._gate_filter)
@@ -183,15 +208,12 @@ class ToolbarHandler:
     def add_to_history(self, text: str) -> None:
         pass  # PromptSession history 自动管理
 
-    # ── F4 模型选择菜单 ────────────────────────────────────────────
+    # ── F4 模型选择菜单（状态栏内嵌，同 F2 闸门模式——零嵌套）──────────
 
-    def _pick_model(self, event) -> None:
-        """F4：弹模型选择浮层（↑↓ Enter，Esc 取消）。
-
-        用独立 prompt_toolkit Application + inline 渲染——不进
-        alt-screen，浮层画在光标下方，退出即散，scrollback 不受影响。
-        期间主 prompt 的输入缓冲原样保留（选完继续打字）。
-        """
+    def _open_model_menu(self, event) -> None:
+        """F4：拉菜单项，冻结输入缓冲，菜单画进 bottom_toolbar。"""
+        if self._menu_active or self._gate_active:
+            return  # 菜单/闸门已开时不重入
         if self._model_menu is None:
             return
         try:
@@ -200,16 +222,56 @@ class ToolbarHandler:
             return
         if not options:
             return
-        from tianshu.gateway.model_picker import pick_from_list
-        chosen = pick_from_list(options, title="选择模型")
-        if chosen is not None and self._model_callback is not None:
+        self._menu_options = options
+        # 预高亮当前模型（main 在菜单项里标 cur 键）
+        self._menu_index = next(
+            (i for i, o in enumerate(options) if o.get("cur")), 0
+        )
+        self._menu_active = True
+        app = getattr(self._session, "app", None) or getattr(event, "app", None)
+        if app is not None:
+            try:
+                app.current_buffer.read_only = True
+            except Exception:
+                pass
+
+    def _menu_navigate(self, delta: int, event) -> None:
+        from tianshu.gateway.model_picker import next_index
+        self._menu_index = next_index(self._menu_index, len(self._menu_options), delta)
+
+    def _menu_confirm(self, event) -> None:
+        chosen = self._menu_options[self._menu_index]["value"]
+        self._menu_close(event)
+        if self._model_callback is not None:
             self._model_callback(chosen)
-        # 主 prompt 重绘（提示符里的模型名已变）
-        try:
-            event.app.renderer.clear()
-            event.app.invalidate()
-        except AttributeError:
-            pass  # 测试假 event / 极端环境无 renderer
+
+    def _menu_cancel(self, event) -> None:
+        self._menu_close(event)
+
+    def _menu_close(self, event) -> None:
+        """收菜单：解冻输入缓冲，状态回归常规状态栏。"""
+        self._menu_active = False
+        self._menu_options = []
+        self._menu_index = 0
+        app = getattr(self._session, "app", None) or getattr(event, "app", None)
+        if app is not None:
+            try:
+                app.current_buffer.read_only = False
+            except Exception:
+                pass
+
+    @property
+    def _menu_filter(self):
+        """菜单激活时才吃 ↑↓/Enter/Esc/q。"""
+        from prompt_toolkit.filters import Condition
+        return Condition(lambda: self._menu_active)
+
+    def _menu_text(self) -> str:
+        """菜单多行文本（_toolbar_text 在菜单激活时改喂此文本）。"""
+        from tianshu.gateway.model_picker import render_menu_lines
+        return render_menu_lines(self._menu_options, self._menu_index)
+
+    # ── F2 预设循环 + minimal 进入闸门 ─────────────────────────────
 
     # ── F2 预设循环 + minimal 进入闸门 ─────────────────────────────
 
@@ -286,6 +348,9 @@ class ToolbarHandler:
     # ── 内部 ─────────────────────────────────────────────────────────
 
     def _toolbar_text(self):
+        # F4 菜单激活 → 菜单文本顶替（优先于 spinner/闸门，二者不并存）
+        if self._menu_active:
+            return [("class:toolbar", self._menu_text())]
         text = self.status_override
         if not text and self._status_callback is not None:
             try:

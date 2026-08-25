@@ -481,13 +481,16 @@ def _main_sync() -> None:
 
     # ── F4 模型选择（会话级，不落盘；持久默认仍走 /model）──
     def _model_menu_items():
+        current = ctx.metadata.get("model_override", "")
         items = []
         for p in registry.list_all():
             tags = sorted(p.capabilities) if p.capabilities else []
+            full = f"{p.provider_name}/{p.model_id}"
             items.append({
-                "value": f"{p.provider_name}/{p.model_id}",
-                "label": f"{p.provider_name}/{p.model_id}",
+                "value": full,
+                "label": full,
                 "desc": "本地" if "local" in tags else ", ".join(tags[:3]),
+                "cur": full == current,
             })
         return items
 

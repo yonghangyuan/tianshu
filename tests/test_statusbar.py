@@ -205,88 +205,97 @@ class TestPresetGate:
         assert h._gate_target == applied_before
 
 
-# ── F4 模型选择（菜单数据 → 回调链路；浮层渲染需 TTY 不在此测）──────────────
+# ── F4 模型选择（状态栏内嵌菜单状态机；渲染纯函数直测）──────────────────────
 
 
-class TestModelPicker:
+class TestModelMenu:
     def _handler(self):
         state = {"switched": []}
         menu = [
-            {"value": "ollama/llama3.2:latest", "label": "ollama/llama3.2:latest", "desc": "本地"},
-            {"value": "deepseek/v4-pro", "label": "deepseek/v4-pro", "desc": "reasoning"},
+            {"value": "deepseek/v4-pro", "label": "deepseek/v4-pro", "desc": "reasoning", "cur": True},
+            {"value": "ollama/llama3.2:latest", "label": "ollama/llama3.2:latest", "desc": "本地", "cur": False},
         ]
 
-        def menu_cb():
-            return menu
-
-        def model_cb(v):
-            state["switched"].append(v)
-
-        h = ToolbarHandler(session=None, model_menu=menu_cb, model_callback=model_cb)
+        h = ToolbarHandler(
+            session=None,
+            model_menu=lambda: menu,
+            model_callback=state["switched"].append,
+        )
         return h, state
 
-    def test_pick_no_menu_is_noop(self, monkeypatch):
-        h = ToolbarHandler(session=None)  # 无 model_menu
-        # 不抛异常即通过（F4 直接忽略）
-        h._pick_model(_FakeEvent())
+    def test_open_menu_highlights_current(self):
+        h, _ = self._handler()
+        h._open_model_menu(_FakeEvent())
+        assert h._menu_active is True
+        assert h._menu_index == 0  # cur 标记项
 
-    def test_pick_menu_exception_swallowed(self):
+    def test_navigate_wraps(self):
+        h, _ = self._handler()
+        h._open_model_menu(_FakeEvent())
+        h._menu_navigate(1, _FakeEvent())   # → 1
+        h._menu_navigate(1, _FakeEvent())   # → 0（回绕）
+        assert h._menu_index == 0
+        h._menu_navigate(-1, _FakeEvent())  # → 1（反向回绕）
+        assert h._menu_index == 1
+
+    def test_confirm_switches_and_closes(self):
+        h, state = self._handler()
+        h._open_model_menu(_FakeEvent())
+        h._menu_navigate(1, _FakeEvent())
+        h._menu_confirm(_FakeEvent())
+        assert state["switched"] == ["ollama/llama3.2:latest"]
+        assert h._menu_active is False
+
+    def test_cancel_no_switch(self):
+        h, state = self._handler()
+        h._open_model_menu(_FakeEvent())
+        h._menu_cancel(_FakeEvent())
+        assert state["switched"] == []
+        assert h._menu_active is False
+
+    def test_open_no_menu_callback_is_noop(self):
+        h = ToolbarHandler(session=None)
+        h._open_model_menu(_FakeEvent())  # 不抛即过
+
+    def test_open_menu_exception_swallowed(self):
         def boom():
             raise RuntimeError("registry 竞态")
-
         h = ToolbarHandler(session=None, model_menu=boom)
-        h._pick_model(_FakeEvent())  # 异常吞掉，不挂输入
+        h._open_model_menu(_FakeEvent())
+        assert h._menu_active is False
 
-    def test_pick_empty_menu_is_noop(self, monkeypatch):
-        called = []
-        import tianshu.gateway.statusbar as sb
-        monkeypatch.setattr(
-            "tianshu.gateway.model_picker.pick_from_list",
-            lambda *a, **kw: called.append(1) or "x",
-        )
-        h = ToolbarHandler(session=None, model_menu=lambda: [], model_callback=called.append)
-        h._pick_model(_FakeEvent())
-        assert called == []  # 空菜单不弹层
+    def test_open_empty_menu_is_noop(self):
+        h = ToolbarHandler(session=None, model_menu=lambda: [])
+        h._open_model_menu(_FakeEvent())
+        assert h._menu_active is False
 
-    def test_pick_selected_invokes_callback(self, monkeypatch):
-        h, state = self._handler()
-        monkeypatch.setattr(
-            "tianshu.gateway.model_picker.pick_from_list",
-            lambda options, title="": options[1]["value"],
-        )
-        h._pick_model(_FakeEvent())
-        assert state["switched"] == ["deepseek/v4-pro"]
+    def test_menu_no_reentry_while_active(self):
+        h, _ = self._handler()
+        h._open_model_menu(_FakeEvent())
+        idx = h._menu_index
+        h._open_model_menu(_FakeEvent())  # 活动中再按 F4 → 忽略
+        assert h._menu_index == idx
 
-    def test_pick_cancelled_no_callback(self, monkeypatch):
-        h, state = self._handler()
-        monkeypatch.setattr(
-            "tianshu.gateway.model_picker.pick_from_list",
-            lambda options, title="": None,
-        )
-        h._pick_model(_FakeEvent())
-        assert state["switched"] == []
+    def test_toolbar_shows_menu_when_active(self):
+        h, _ = self._handler()
+        h._open_model_menu(_FakeEvent())
+        text = h._toolbar_text()
+        assert isinstance(text, list)
+        assert "选择模型" in text[0][1]
+        assert "ollama/llama3.2:latest" in text[0][1]
+        assert "❯" in text[0][1]  # 高亮行
 
 
-def test_model_picker_module_import():
-    from tianshu.gateway.model_picker import pick_from_list
-    assert callable(pick_from_list)
-
-
-def test_model_picker_layout_constructs():
-    """真实构造浮层 layout（不 mock）——拦截 Window 参数名/ptk API 漂移。
-
-    app.run() 需 TTY 不能进测试，但构造路径必须全走一遍。
-    """
-    import inspect
-    from tianshu.gateway import model_picker as mp
-
-    src = inspect.getsource(mp.pick_from_list)
-    assert "dont_extend=True" not in src  # 不存在的参数名（曾炸真机）
-
-    # 构造不抛 = Window/HSplit/FormattedTextControl 参数全对
-    # （pick_from_list 内部建完 layout 才 app.run()，run 会因无 TTY 抛异常
-    #  被兜底 except 吃掉返回 None——构造错误则在到达 run 之前就炸）
-    result = mp.pick_from_list(
-        [{"value": "a/b", "label": "a/b", "desc": ""}], title="t"
-    )
-    assert result is None  # 无 TTY 环境：构造成功 + run 失败兜底 → None
+def test_render_menu_lines():
+    from tianshu.gateway.model_picker import render_menu_lines, next_index
+    opts = [
+        {"value": "a", "label": "a", "desc": "d1"},
+        {"value": "b", "label": "b", "desc": "d2"},
+    ]
+    s = render_menu_lines(opts, 1)
+    lines = s.split("\n")
+    assert "选择模型" in lines[0]
+    assert "❯ b" in lines[2]
+    assert "❯ a" not in s
+    assert next_index(1, 2, 1) == 0  # 回绕
+    assert next_index(0, 2, -1) == 1
