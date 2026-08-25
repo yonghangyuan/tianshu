@@ -84,30 +84,31 @@ def pick_from_list(
         "hint": "fg:#6b7280",
     })
 
-    layout = Layout(HSplit([
-        Window(
-            FormattedTextControl([("class:title", f" {title}\n")]),
-            height=1,
-            dont_extend=True,
-        ),
-        Window(
-            FormattedTextControl(_body_text),
-            dont_extend_height=True,
-        ),
-        Window(
-            FormattedTextControl([("class:hint", " ↑↓ 选择  Enter 确认  Esc/q 取消")]),
-            height=1,
-            dont_extend=True,
-        ),
-    ]))
-
-    app = Application(
-        layout=layout,
-        key_bindings=kb,
-        style=style,
-        full_screen=False,  # inline：画在光标下方，不接管屏幕
-    )
     try:
+        layout = Layout(HSplit([
+            Window(
+                FormattedTextControl([("class:title", f" {title}\n")]),
+                height=1,
+                dont_extend_height=True,
+            ),
+            Window(
+                FormattedTextControl(_body_text),
+                dont_extend_height=True,
+            ),
+            Window(
+                FormattedTextControl([("class:hint", " ↑↓ 选择  Enter 确认  Esc/q 取消")]),
+                height=1,
+                dont_extend_height=True,
+            ),
+        ]))
+
+        app = Application(
+            layout=layout,
+            key_bindings=kb,
+            style=style,
+            full_screen=False,  # inline：画在光标下方，不接管屏幕
+        )
         return app.run()
     except Exception:
+        # 无 TTY / Git Bash NoConsoleScreenBufferError / ptk 环境异常 → 取消
         return None

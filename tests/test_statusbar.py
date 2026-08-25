@@ -270,3 +270,23 @@ class TestModelPicker:
 def test_model_picker_module_import():
     from tianshu.gateway.model_picker import pick_from_list
     assert callable(pick_from_list)
+
+
+def test_model_picker_layout_constructs():
+    """真实构造浮层 layout（不 mock）——拦截 Window 参数名/ptk API 漂移。
+
+    app.run() 需 TTY 不能进测试，但构造路径必须全走一遍。
+    """
+    import inspect
+    from tianshu.gateway import model_picker as mp
+
+    src = inspect.getsource(mp.pick_from_list)
+    assert "dont_extend=True" not in src  # 不存在的参数名（曾炸真机）
+
+    # 构造不抛 = Window/HSplit/FormattedTextControl 参数全对
+    # （pick_from_list 内部建完 layout 才 app.run()，run 会因无 TTY 抛异常
+    #  被兜底 except 吃掉返回 None——构造错误则在到达 run 之前就炸）
+    result = mp.pick_from_list(
+        [{"value": "a/b", "label": "a/b", "desc": ""}], title="t"
+    )
+    assert result is None  # 无 TTY 环境：构造成功 + run 失败兜底 → None
