@@ -137,10 +137,12 @@ class ToolbarHandler:
         @kb.add("up", filter=self._menu_filter)
         def _(event):
             self._menu_navigate(-1, event)
+            event.app.invalidate()  # 高亮行变化重绘
 
         @kb.add("down", filter=self._menu_filter)
         def _(event):
             self._menu_navigate(1, event)
+            event.app.invalidate()
 
         @kb.add("enter", filter=self._menu_filter)
         def _(event):
@@ -177,8 +179,10 @@ class ToolbarHandler:
         def _(event):
             event.app.layout.focus(event.app.layout.current_control.search_buffer_control)
 
-        # ── Enter: 提交（末尾 \ 续行）──
-        @kb.add("enter")
+        # ── Enter: 提交（末尾 \ 续行；菜单/闸门激活时让位）──
+        from prompt_toolkit.filters import Condition as _Cond
+
+        @kb.add("enter", filter=_Cond(lambda: not self._menu_active))
         def _(event):
             buffer = event.current_buffer
             text = buffer.text
@@ -251,7 +255,7 @@ class ToolbarHandler:
         self._menu_close(event)
 
     def _menu_close(self, event) -> None:
-        """收菜单：解冻输入缓冲，状态回归常规状态栏。"""
+        """收菜单：解冻输入缓冲，状态回归常规状态栏，强制重绘。"""
         self._menu_active = False
         self._menu_options = []
         self._menu_index = 0
@@ -259,6 +263,13 @@ class ToolbarHandler:
         if app is not None:
             try:
                 app.current_buffer.read_only = lambda: False
+            except Exception:
+                pass
+            try:
+                # 收菜单必须强制重绘：纯状态翻转不触发 ptk 重算 toolbar，
+                # 菜单文本会残留在屏上（用户按 Enter/Esc"界面不退"的根因）
+                app.renderer.clear()
+                app.invalidate()
             except Exception:
                 pass
 

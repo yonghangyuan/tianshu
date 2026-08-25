@@ -496,9 +496,14 @@ def _main_sync() -> None:
 
     def _switch_model(full: str) -> None:
         ctx.metadata["model_override"] = full
-        _rich_console.print(f"  ⚡ 已切换: [cyan]{full}[/cyan]（本次会话）")
+        # ptk prompt 活跃期间不能直接 print（与 toolbar 渲染打架）——
+        # 存消息，主循环轮末统一打印
+        nonlocal _pending_notice
+        _pending_notice = f"  ⚡ 已切换: {full}（本次会话）"
 
     renderer = StreamRenderer()
+
+    _pending_notice = ""  # F4 轮内切换反馈，prompt 返回后统一打印
 
     def _prompt_text():
         m = ctx.metadata.get("model_override", "")
@@ -563,6 +568,11 @@ def _main_sync() -> None:
         except (EOFError, KeyboardInterrupt):
             _rich_console.print("\n[dim]再见[/dim]")
             break
+        finally:
+            # F4 轮内切换反馈（prompt 已退出，打印安全）
+            if _pending_notice:
+                _rich_console.print(_pending_notice)
+                _pending_notice = ""
 
         if not user_input:
             continue
