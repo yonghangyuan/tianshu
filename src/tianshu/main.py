@@ -479,6 +479,22 @@ def _main_sync() -> None:
             _apply_preset(p)
         return _preset
 
+    # ── F4 模型选择（会话级，不落盘；持久默认仍走 /model）──
+    def _model_menu_items():
+        items = []
+        for p in registry.list_all():
+            tags = sorted(p.capabilities) if p.capabilities else []
+            items.append({
+                "value": f"{p.provider_name}/{p.model_id}",
+                "label": f"{p.provider_name}/{p.model_id}",
+                "desc": "本地" if "local" in tags else ", ".join(tags[:3]),
+            })
+        return items
+
+    def _switch_model(full: str) -> None:
+        ctx.metadata["model_override"] = full
+        _rich_console.print(f"  ⚡ 已切换: [cyan]{full}[/cyan]（本次会话）")
+
     renderer = StreamRenderer()
 
     def _prompt_text():
@@ -500,6 +516,7 @@ def _main_sync() -> None:
                 renderer._total_cost.get("completion", 0),
                 renderer._total_cost.get("cached", 0),
                 renderer._last_cost.get("elapsed", 0.0),
+                model=ctx.metadata.get("model_override", ""),
             )
         except Exception:
             return ""
@@ -513,6 +530,8 @@ def _main_sync() -> None:
         preset_gate=True,  # 敏感预设 F2 闸门（handler 内弹 y/N）
         fullscreen=True,  # inline 状态栏（bottom_toolbar）
         status_callback=_status_bar_text,
+        model_menu=_model_menu_items,
+        model_callback=_switch_model,
     )
 
     # ── 会话存储 ──

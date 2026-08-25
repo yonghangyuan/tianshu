@@ -36,11 +36,15 @@ def format_status_bar(
     completion_tok: int,
     cached_tok: int = 0,
     elapsed: float = 0.0,
+    model: str = "",
 ) -> str:
-    """状态栏单行文本：模式 预设 | tok 累计 (缓存命中) | 耗时。"""
+    """状态栏单行文本：模式 预设 模型 | tok 累计 (缓存命中) | 耗时。"""
     m = _MODE_SYMBOLS.get(mode, mode)
     p = _PRESET_SYMBOLS.get(preset, preset)
-    parts = [f" {m} {mode} · {p} {preset}"]
+    head = f" {m} {mode} · {p} {preset}"
+    if model:
+        head += f" · {model}"
+    parts = [head]
     tok = f"↑{_fmt_k(prompt_tok)} ↓{_fmt_k(completion_tok)}"
     if cached_tok > 0 and prompt_tok > 0:
         tok += f" ⚡{_fmt_k(cached_tok)} ({cached_tok * 100 // prompt_tok}%)"
@@ -69,11 +73,16 @@ class ToolbarHandler:
         preset_callback: Callable | None = None,
         status_callback: Callable[[], str] | None = None,
         preset_gate: Callable[[str, Callable[[bool], None]], None] | None = None,
+        model_menu: Callable[[], list[dict]] | None = None,
+        model_callback: Callable[[str], None] | None = None,
     ) -> None:
         """preset_gate(target, apply): 进敏感预设（minimal）前弹 y/N 确认。
 
         在 F2 按键绑定内同步调用——inline 模式下不能等主循环（用户还
         在 prompt 里打字）。apply(True/False) 回调应用/取消。
+
+        model_menu(): 返回模型菜单项 [{"value", "label", "desc"}]（F4 弹出）。
+        model_callback(value): F4 菜单选中后回调（会话级切换，不落盘）。
         """
         self._session = session
         self._completer = completer
@@ -81,6 +90,8 @@ class ToolbarHandler:
         self._preset_callback = preset_callback
         self._status_callback = status_callback
         self._preset_gate = preset_gate
+        self._model_menu = model_menu
+        self._model_callback = model_callback
         self.status_override = ""  # 回合中 spinner 文本 / 闸门提示（非空顶替状态栏）
         self._gate_active = False
         self._gate_target = ""
@@ -112,6 +123,11 @@ class ToolbarHandler:
             # 纯按键（输入缓冲无变化）不会触发重绘——强制重算 toolbar
             event.app.renderer.clear()
             event.app.invalidate()
+
+        # ── F4: 模型选择菜单（↑↓/Enter，Esc 取消）──
+        @kb.add("f4")
+        def _(event):
+            self._pick_model(event)
 
         # ── y/n: preset_gate 弹窗中确认/取消 ──
         @kb.add("y", filter=self._gate_filter)
@@ -166,6 +182,34 @@ class ToolbarHandler:
 
     def add_to_history(self, text: str) -> None:
         pass  # PromptSession history 自动管理
+
+    # ── F4 模型选择菜单 ────────────────────────────────────────────
+
+    def _pick_model(self, event) -> None:
+        """F4：弹模型选择浮层（↑↓ Enter，Esc 取消）。
+
+        用独立 prompt_toolkit Application + inline 渲染——不进
+        alt-screen，浮层画在光标下方，退出即散，scrollback 不受影响。
+        期间主 prompt 的输入缓冲原样保留（选完继续打字）。
+        """
+        if self._model_menu is None:
+            return
+        try:
+            options = self._model_menu()
+        except Exception:
+            return
+        if not options:
+            return
+        from tianshu.gateway.model_picker import pick_from_list
+        chosen = pick_from_list(options, title="选择模型")
+        if chosen is not None and self._model_callback is not None:
+            self._model_callback(chosen)
+        # 主 prompt 重绘（提示符里的模型名已变）
+        try:
+            event.app.renderer.clear()
+            event.app.invalidate()
+        except AttributeError:
+            pass  # 测试假 event / 极端环境无 renderer
 
     # ── F2 预设循环 + minimal 进入闸门 ─────────────────────────────
 
@@ -265,6 +309,8 @@ def create_toolbar_handler(
     preset_callback: Callable | None = None,
     preset_gate: Any = True,
     status_callback: Callable[[], str] | None = None,
+    model_menu: Callable[[], list[dict]] | None = None,
+    model_callback: Callable[[str], None] | None = None,
 ) -> "ToolbarHandler | None":
     """创建 inline 状态栏处理器；不可用（无 TTY/Git Bash/无 ptk）返回 None。"""
     if not hasattr(__import__("sys"), "stdin") or not __import__("sys").stdin.isatty():
@@ -279,6 +325,8 @@ def create_toolbar_handler(
             preset_callback=preset_callback,
             preset_gate=preset_gate,
             status_callback=status_callback,
+            model_menu=model_menu,
+            model_callback=model_callback,
         )
     except Exception:
         return None  # Git Bash NoConsoleScreenBufferError 等

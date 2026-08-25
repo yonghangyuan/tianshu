@@ -48,6 +48,16 @@ def test_status_bar_elapsed():
     assert "2.5s" in s
 
 
+def test_status_bar_model():
+    s = format_status_bar("normal", "standard", 10, 10, model="ollama/llama3.2:latest")
+    assert "ollama/llama3.2:latest" in s
+
+
+def test_status_bar_no_model_section_when_empty():
+    s = format_status_bar("normal", "standard", 10, 10)
+    assert s.rstrip().endswith("↑10 ↓10")
+
+
 # ── ToolbarHandler（无 TTY 也可构造核心逻辑）──────────────────────────────
 
 
@@ -193,3 +203,70 @@ class TestPresetGate:
         applied_before = h._gate_target
         h._cycle_preset(_FakeEvent())       # 再按 F2 → 忽略
         assert h._gate_target == applied_before
+
+
+# ── F4 模型选择（菜单数据 → 回调链路；浮层渲染需 TTY 不在此测）──────────────
+
+
+class TestModelPicker:
+    def _handler(self):
+        state = {"switched": []}
+        menu = [
+            {"value": "ollama/llama3.2:latest", "label": "ollama/llama3.2:latest", "desc": "本地"},
+            {"value": "deepseek/v4-pro", "label": "deepseek/v4-pro", "desc": "reasoning"},
+        ]
+
+        def menu_cb():
+            return menu
+
+        def model_cb(v):
+            state["switched"].append(v)
+
+        h = ToolbarHandler(session=None, model_menu=menu_cb, model_callback=model_cb)
+        return h, state
+
+    def test_pick_no_menu_is_noop(self, monkeypatch):
+        h = ToolbarHandler(session=None)  # 无 model_menu
+        # 不抛异常即通过（F4 直接忽略）
+        h._pick_model(_FakeEvent())
+
+    def test_pick_menu_exception_swallowed(self):
+        def boom():
+            raise RuntimeError("registry 竞态")
+
+        h = ToolbarHandler(session=None, model_menu=boom)
+        h._pick_model(_FakeEvent())  # 异常吞掉，不挂输入
+
+    def test_pick_empty_menu_is_noop(self, monkeypatch):
+        called = []
+        import tianshu.gateway.statusbar as sb
+        monkeypatch.setattr(
+            "tianshu.gateway.model_picker.pick_from_list",
+            lambda *a, **kw: called.append(1) or "x",
+        )
+        h = ToolbarHandler(session=None, model_menu=lambda: [], model_callback=called.append)
+        h._pick_model(_FakeEvent())
+        assert called == []  # 空菜单不弹层
+
+    def test_pick_selected_invokes_callback(self, monkeypatch):
+        h, state = self._handler()
+        monkeypatch.setattr(
+            "tianshu.gateway.model_picker.pick_from_list",
+            lambda options, title="": options[1]["value"],
+        )
+        h._pick_model(_FakeEvent())
+        assert state["switched"] == ["deepseek/v4-pro"]
+
+    def test_pick_cancelled_no_callback(self, monkeypatch):
+        h, state = self._handler()
+        monkeypatch.setattr(
+            "tianshu.gateway.model_picker.pick_from_list",
+            lambda options, title="": None,
+        )
+        h._pick_model(_FakeEvent())
+        assert state["switched"] == []
+
+
+def test_model_picker_module_import():
+    from tianshu.gateway.model_picker import pick_from_list
+    assert callable(pick_from_list)

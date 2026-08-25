@@ -24,6 +24,8 @@ def create_input_handler(
     output_consoles: list | None = None,  # 兼容旧签名（inline 模式不接管输出）
     prompt_text: Any = None,     # 兼容旧签名（inline 提示符由 prompt() 传入）
     status_callback: Any = None,  # Callable[[], str] — 状态栏文本
+    model_menu: Any = None,       # Callable[[], list[dict]] — F4 模型菜单项
+    model_callback: Any = None,   # Callable[[str], None] — F4 选中回调
 ) -> "InputHandler":
     """工厂函数：创建输入处理器。
 
@@ -124,6 +126,8 @@ def create_input_handler(
                     preset_callback=preset_callback,
                     preset_gate=preset_gate,
                     status_callback=status_callback,
+                    model_menu=model_menu,
+                    model_callback=model_callback,
                 )
                 if handler is not None:
                     return handler

@@ -33,3 +33,4 @@ F:/tianshu_dev/
 *.epub
 tianshu.db-shm
 tianshu.db-wal
+_healthcheck.py
