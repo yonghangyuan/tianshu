@@ -78,7 +78,10 @@ def load_providers(
 
         for model_cfg in cfg.get("models", []):
             model_id = model_cfg["id"]
-            provider = _create_provider(name, model_id, api_key, base_url)
+            provider = _create_provider(
+                name, model_id, api_key, base_url,
+                tags=model_cfg.get("tags"),
+            )
             if provider:
                 registry.register(provider)
 
@@ -194,30 +197,24 @@ def load_rag_config(
 
 
 def _create_provider(
-    name: str, model_id: str, api_key: str, base_url: str
+    name: str, model_id: str, api_key: str, base_url: str,
+    tags: list[str] | None = None,
 ) -> BaseProvider | None:
-    """根据 provider 名称创建对应的适配器实例。"""
+    """根据 provider 名称创建对应的适配器实例。
+
+    tags: providers.yaml 模型级 tags → provider.capabilities（路由/F4
+    菜单展示 + no_tools 等行为标记）。
+    """
     if name == "deepseek":
         return DeepSeekProvider(model=model_id, api_key=api_key)
     elif name == "doubao":
         from ..diyao.providers.doubao import DoubaoProvider
         return DoubaoProvider(model=model_id, api_key=api_key, base_url=base_url)
-    elif name in ("moonshot", "kimi"):
-        from ..diyao.providers.generic import GenericOpenAIProvider
-        return GenericOpenAIProvider(
-            provider_name=name, model_id=model_id,
-            api_key=api_key, base_url=base_url,
-        )
-    elif name == "zhipu":
-        from ..diyao.providers.generic import GenericOpenAIProvider
-        return GenericOpenAIProvider(
-            provider_name="zhipu", model_id=model_id,
-            api_key=api_key, base_url=base_url,
-        )
     else:
-        # 未知 provider → 尝试通用 OpenAI 兼容适配器
+        # moonshot/zhipu/ollama/... → 通用 OpenAI 兼容适配器
         from ..diyao.providers.generic import GenericOpenAIProvider
         return GenericOpenAIProvider(
             provider_name=name, model_id=model_id,
             api_key=api_key, base_url=base_url,
+            tags=tags or [],
         )

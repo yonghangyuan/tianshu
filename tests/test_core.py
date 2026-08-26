@@ -147,6 +147,29 @@ class TestRouter:
         assert p is not None
         assert mid == "llama3.2:latest"
 
+    def test_no_tools_tag_strips_tools(self):
+        """no_tools 标签模型全程不带工具 schema（本地纯聊天兜底）。
+
+        providers.yaml tags → capabilities → run/run_stream 剥 tools。
+        """
+        from tianshu.core.service import AgentCore
+        from tianshu.core.config import _create_provider
+
+        # 1) tags 接线：yaml tags 流进 capabilities
+        p = _create_provider(
+            "ollama", "llama3.2:latest", "local",
+            "http://127.0.0.1:11434/v1",
+            tags=["fast", "local", "no_tools"],
+        )
+        assert "no_tools" in p.capabilities
+
+        # 2) 云端模型不受影响（无 no_tools 标签）
+        cloud = _create_provider(
+            "moonshot", "moonshot-v1-8k", "sk-x",
+            "https://api.moonshot.cn/v1", tags=["fast"],
+        )
+        assert "no_tools" not in cloud.capabilities
+
 
 class TestTrigramChannel:
     """三爻消息通道 demo —— 天·人·地三层验证。"""

@@ -136,6 +136,7 @@ def test_inject_instruction_empty_messages_inserts():
 class _ToolCallProvider:
     """第一次 chat 返回 shell_exec 工具调用，第二次返回纯文本（结束循环）。"""
     max_context_tokens = 65536
+    capabilities: set = set()  # run() 检查 no_tools 标签时会访问
 
     def __init__(self, command: str):
         self.command = command

@@ -23,14 +23,21 @@ class GenericOpenAIProvider(OpenAICompatibleProvider):
         api_key: str | None = None,
         base_url: str = "",
         api_key_env: str = "",
+        tags: list[str] | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._model_id = model_id
         self._base_url = base_url.rstrip("/")
         self._api_key_env = api_key_env or f"{provider_name.upper()}_API_KEY"
+        self._tags = set(tags or [])
 
         import os
         self._api_key = api_key or os.environ.get(self._api_key_env, "")
+
+    @property
+    def capabilities(self) -> set[str]:
+        """providers.yaml 模型级 tags（含 no_tools 等行为标记）。"""
+        return set(self._tags)
 
     @property
     def base_url(self) -> str:

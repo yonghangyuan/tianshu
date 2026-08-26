@@ -66,7 +66,7 @@ providers:
     base_url: http://127.0.0.1:11434/v1
     models:
       - id: llama3.2:latest
-        tags: [fast, cheap, local, multilingual]
+        tags: [fast, cheap, local, multilingual, no_tools]
         max_tokens: 131072
       - id: deepseek-r1:7b
         tags: [reasoning, local]
@@ -74,6 +74,8 @@ providers:
       - id: qwen3:30b
         tags: [reasoning, long_context, local]
         max_tokens: 32768
+    # no_tools 标记：该模型全程不带工具 schema（本地纯聊天兜底——
+    # 工具列表会把弱模型带偏，对着 schema 自说自话）
 
 # ── 路由规则 ──
 # 格式：task_types（任务类型列表） → prefer（优先级降序的 provider/model_id）

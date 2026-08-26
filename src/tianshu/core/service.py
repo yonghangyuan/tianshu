@@ -376,9 +376,12 @@ class AgentCore:
 
         for _ in range(10):  # MAX_TOOL_ROUNDS
             try:
+                _tools = self._get_tools()
+                if _tools and "no_tools" in provider.capabilities:
+                    _tools = None  # 本地纯聊天模型不带工具（同 run_stream）
                 resp = await provider.chat(
                     messages=messages,
-                    tools=self._get_tools(),
+                    tools=_tools,
                 )
             except Exception as e:
                 return AgentResponse(
@@ -720,8 +723,12 @@ class AgentCore:
             round_reasoning = ""
 
             try:
-                # 最后一轮不传 tools，强制纯文本回复
+                # 最后一轮不传 tools，强制纯文本回复；
+                # no_tools 标签模型（本地纯聊天兜底）全程不带工具——
+                # 工具 schema 会把弱模型带偏（对着工具列表自说自话）
                 tools_for_round = None if _budget_exhausted else self._get_tools()
+                if tools_for_round and "no_tools" in provider.capabilities:
+                    tools_for_round = None
                 stream = provider.chat_stream(
                     messages=messages,
                     tools=tools_for_round,
