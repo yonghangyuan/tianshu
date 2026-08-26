@@ -29,6 +29,7 @@ ALLOWED_HOT_IMPORTS = {
     "tianshu.gateway", "tianshu.gateway.cli",
     "tianshu.gateway.statusbar",
     "tianshu.gateway.server",
+    "tianshu.gateway.phone_ws",   # 手机控制通道（轻量：仅 asyncio/json/fastapi）
     "tianshu.renyao", "tianshu.renyao.skills",
     "tianshu.renyao.skills.manifest",
     "tianshu.renyao.skills.learn",

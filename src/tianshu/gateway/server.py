@@ -658,6 +658,27 @@ async def _broadcast(msg: dict):
             _ws_clients.remove(c)
 
 
+# ── 手机控制通道 (TS-018 M1) ─────────────────────────────────
+
+@app.websocket("/ws/phone")
+async def websocket_phone(ws: WebSocket):
+    """手机桥 WS——鉴权同 /ws（cookie/query token）。"""
+    token = ws.cookies.get("tianshu_token") or ws.query_params.get("token", "")
+    if not _check_auth_token(token):
+        await ws.close(code=4001, reason="未登录")
+        return
+    await ws.accept()
+    from tianshu.gateway.phone_ws import phone_endpoint
+    await phone_endpoint(ws, auth_ok=True)
+
+
+@app.get("/phone/status")
+async def phone_status_endpoint():
+    """手机桥在线状态（CLI/调试用，走鉴权）。"""
+    from tianshu.gateway.phone_ws import phone_status
+    return phone_status()
+
+
 # ── 群聊 ────────────────────────────────────────────────────
 
 _chat_messages: list[dict] = []  # {id, from, content, time}

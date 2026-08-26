@@ -1,0 +1,17 @@
+{
+  "name": "phone",
+  "description": "操作真实 Android 手机——读屏幕、点按、输入、滚动、导航",
+  "trigram": "地",
+  "version": 1,
+  "tools": [
+    {
+      "name": "screen_state",
+      "description": "Read the current Android phone screen. Returns the active app package and a flat list of UI nodes (text/desc/bounds/clickable/scrollable). Use this to see what is on screen before tapping.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ]
+}
