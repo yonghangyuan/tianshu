@@ -1,0 +1,25 @@
+docs: TS-018 MC0 判定完成 — Chaquopy 17 + Python 3.13 路线确立
+
+MC0 验证记录（模拟器 Medium_Phone_API_36.1 真跑）:
+- Chaquopy 17.0.0 + AGP 8.2.0 + 本机 Python 3.13 兼容
+- APK 6.2→37.7MB（libpython3.13.so 双 ABI ~31MB，符合预期）
+- 模拟器安装启动，Logcat 铁证: agent.hello 返回
+  天枢手机助手 Python 核心已就绪 / python 3.13.9
+- Kotlin(Application.onCreate) ↔ Python(agent.hello) 互调通
+
+判定: D1 = Python(Chaquopy)。agent 循环与天枢同语言，cli_proto 移植。
+
+过程坑备案:
+- Chaquopy 13- 的 android.python DSL 已废弃 → 15+ 顶层 chaquopy 块
+- Chaquopy 15 最高 Python 3.12；3.13 需 16+/17
+- deepdone 工程骨架半成品（ui/data 空目录编译不过），宿主弃用，
+  配方移植到 tianshu_dev（33s 可构建 + AgentService 已在）
+- deepdone 缺 mipmap 图标 → Python 生成占位 PNG 方案
+
+Android 侧新增（F:\tianshu_dev\android，独立工程）:
+- chaquopy 块 + requests 依赖 + agent.py(MC0 hello)
+- TianshuApp.kt 启动自检接线
+
+Co-Authored-By: jiojio <16404193+jiojio21@user.noreply.gitee.com>
+Co-Authored-By: DeepSeek <noreply@deepseek.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
