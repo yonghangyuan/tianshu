@@ -148,9 +148,15 @@ class McpClientManager:
 
             for tool in tools:
                 # MCP tool 对象属性: name, description, inputSchema
+                # SDK v2 字段是下划线 input_schema（驼峰读取拿到空 dict
+                # → function 定义 type:null → provider 400）——两个都试
                 tool_name = tool.name
                 description = getattr(tool, "description", "") or ""
-                input_schema = getattr(tool, "inputSchema", {}) or {}
+                input_schema = (
+                    getattr(tool, "inputSchema", None)
+                    or getattr(tool, "input_schema", None)
+                    or {}
+                )
 
                 # 生成天枢工具名: mcp_{server}_{tool}
                 tianshu_name = f"mcp_{name}_{tool_name}"
