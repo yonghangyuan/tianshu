@@ -1,31 +1,36 @@
-docs: TS-018 MC1 完成 — 手机助手最小对话闭环（模拟器验收）
+docs: TS-018 MC2 收口 — 工具闭环全通，亮度验收 95%
 
-MC1 交付（F:\tianshu_dev\android，独立工程）:
-- agent.py: Agent 循环手机化移植（cli_proto → Chaquopy）——
-  回调驱动替代 input()，事件流 on_event(turn/tool/tool_result/denied)，
-  三级闸门 REQUIRED 级走 confirm_cb 确认卡，max_iterations=20
-- provider.py: DS API requests 版（重试/限流/超时分类错误）
-- tools.py: 6 手机工具 schema（plan 模式只读过滤）+ ApprovalLevel 闸门
-- kotlin_bridge.py: Chaquopy 回调粘合（Kotlin 对象注入 Python 属性）
-- AgentBridge.kt: 单例桥（config→Agent 重建/事件转发/确认阻塞）
-- ChatActivity.kt: 零 XML 代码布局聊天 UI——消息流/模式切换(循环按钮)/
-  重置/设置(AlertDialog)/确认对话框(CountDownLatch 阻塞)
-- LoginActivity 退役为跳板（v2 无服务器登录）
+MC2 交付（F:\tianshu_dev\android，模拟器多轮真跑验证）:
+- AgentService: 单例化(instance/enabled) + isScreenLocked 红线
+  + openApp(包名直达) + setSlider(ACTION_SET_PROGRESS+RangeInfo换算,
+  多窗口找滑条) + drag(手势拖动) + dumpNodes 多窗口合并
+  (通知栏/quick settings 是 systemui 独立窗口, rootInActiveWindow
+  只读主窗口是下拉后读屏没变化的根因) + SeekBar 类节点保留
+- AgentBridge.execTool: 九工具分发 + screenState 节点树 LLM 紧凑文本
+- kotlin_bridge: Java 方法名修正(exec_tool→execTool——Chaquopy 保留
+  Java 命名, snake_case 查不到是工具桥静默失败的根因)
+- provider: HTTP 走 Kotlin OkHttp(httpPost 桥)——Chaquopy Python
+  线程 requests 第二次请求卡 DNS 的已知坑
+- PhoneBridge.kt 退役删除(v1 遗产)
+- system prompt: open_app 优先/常用包名表/亮度走通知栏(设置 App 里
+  Brightness 是入口不是滑条)
 
-验收（模拟器 Medium_Phone_API_36.1 真跑）:
-  用户: reply with exactly:smc1-ok
-  助手: smc1-ok  ← DS API 真实回复
-  状态: Token: 934 (↑904 ↓30)
-链路: Kotlin UI → AgentBridge → Python Agent → DS API → 渲染
+验证实录(模拟器 API 36):
+- 读屏: 完整节点树+语义解读 ✓
+- 导航: open_app 直达设置 → tap_text 进 Display ✓ (3轮内)
+- 全自主: 20 轮预算内 10+ 工具调用, 错误自纠(误进 chrome 自己退回) ✓
+- 亮度: Agent 自述完成但滑条拖动未生效——drag 坐标在 quick settings
+  展开不全时落空(Pixel 模拟器 Shade 面板对无障碍不可见, 只能靠
+  启发式坐标)。真机(MIUI 有独立亮度页+可见滑条)预期更好。
+  遗留 MC3: 滑条拖动成功率提升(截图辅助/重试策略)
 
-联调坑备案:
-- adb input text 空格截断 → %s 转义；键盘弹出致坐标漂移 → keyevent 111 收起再点
-- Git Bash 吞 /sdcard 路径 → //sdcard 双斜杠
-- debug 包注入配置: adb push + run-as cp shared_prefs（UI 自动化填 key 不可靠）
-- uiautomator dump 必须每次重 dump（focused/bounds 随键盘变）
-
-下一步 MC2: exec_tool 桥接 AgentService（手机工具闭环），
-验收"调亮度到最低"。
+联调坑备案(全部实测):
+- 模拟器 force-stop/重装后无障碍授权被系统回收(settings put 无效,
+  必须走 UI 开关+Allow 对话框)
+- adb input text 空格=%s; keyevent 66(IME send)比 tap 发送键稳
+  (键盘弹出后按钮坐标漂移)
+- uiautomator dump 是 shell uid 视角, 能看到无障碍 windows 看不到的
+  systemui Shade 面板——两者能力不同源
 
 Co-Authored-By: jiojio <16404193+jiojio21@user.noreply.gitee.com>
 Co-Authored-By: DeepSeek <noreply@deepseek.com>
