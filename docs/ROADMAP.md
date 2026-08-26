@@ -210,19 +210,23 @@
 - **预计**: 剩余 1 天（验证+上线）
 
 ### AND-002 (TS-018) — 天枢手机助手（全内置）
-- **状态**: 🔵 v2 方案定稿（v1 遥控器架构 08-26 反转作废，AgentService 复用）
+- **状态**: 🔵 MC0-MC2 完成（08-26，模拟器验证）；下一步真机首验或 MC3
 - **创建**: 2026-08-25 | **修订**: 2026-08-26
 - **方案**: `docs/ANDROID_CONTROL_PLAN.md` v2（合成 DeepDone 资产）
 - **定位**: 手机上的智能助手产品——对话即操作手机，DeepSeek API 驱动，全内置 APK，不依赖电脑/服务器
-- **参考**: `F:\hermes\deepdone\cli_proto\`（956 行可跑 Agent 循环+三级闸门+三模式，用户旧作）
+- **架构**: Chaquopy 17 + Python 3.13 内嵌（MC0 判定 D1=Python）· 宿主 `F:\tianshu_dev\android\`（deepdone 骨架弃用，cli_proto 为移植源）
+- **代码布局**:
+  - Python: `app/src/main/python/`（agent.py 循环+闸门 / provider.py DS API / tools.py 九工具 schema / kotlin_bridge.py 回调粘合）
+  - Kotlin: `AgentService.kt`(无障碍感知+动作) `AgentBridge.kt`(桥+HTTP出口) `ChatActivity.kt`(对话UI) `TianshuApp.kt`(启动自检)
 - **里程碑**:
-  - MC0 技术验证: deepdone 工程构建 + Chaquopy 判定（Kotlin or Python）—— 半会话
-  - MC1 最小对话: AgentLoop+ChatUI+DS API 流式 —— 1 会话
-  - MC2 工具闭环: PhoneTools 接 AgentService + 闸门，**验收"调亮度到最低"** —— 1 会话
-  - MC3 产品化: 确认卡片+高危清单+Room 审计+澎湃保活 —— 1 会话
-  - MC4 增强: 视觉(TS-019)/语音/小组件 —— 二期
-- **安全**: 闸门全本地（AUTO/SUGGEST/REQUIRED=三爻手机版）+ 锁屏拒绝 + 金融 deny
-- **v1 遗产**: AgentService.kt 复用；/ws/phone PC 端点保留作调试后门
+  - ✅ MC0 技术验证（08-26）: Chaquopy 17+AGP 8.2+Python 3.13，模拟器 Kotlin↔Python 互调铁证，APK 37.7MB
+  - ✅ MC1 最小对话（08-26）: 模拟器验收——用户输入→Python Agent→DS API→回复+Token 统计
+  - ✅ MC2 工具闭环（08-26）: 九工具桥+多窗口读屏；模拟器实证全自主操作（读屏解读/直达设置/进Display/错误自纠）；亮度滑条拖动在 Pixel 模拟器落空（Shade 面板对无障碍不可见）→ 真机/MC3 收
+  - ⬜ 真机首验: 小米17 装 APK+开无障碍+填 key，MIUI 亮度页滑条节点可见预期直接过
+  - ⬜ MC3 产品化: 滑条重试策略/截图辅助/Room 审计/澎湃保活/确认卡片打磨 —— 1 会话
+  - ⬜ MC4 增强: 视觉(TS-019)/语音/小组件 —— 二期
+- **安全**: 闸门全本地（AUTO/SUGGEST/REQUIRED=三爻手机版）+ 锁屏拒绝 + 金融 deny（MC3）
+- **已修关键坑**（备案见 git log 89fe384）: Chaquopy Python 线程 requests 卡 DNS→Kotlin OkHttp 桥；Java 方法名在 Python 侧保留驼峰（execTool 非 exec_tool）；模拟器重装/force-stop 后无障碍授权回收；多窗口 dumpNodes（systemui 通知栏盲区）
 
 ### TS-019 — 多模态输入（并入 AND-002 M4 触发）
 - **状态**: ⬜ 待办
