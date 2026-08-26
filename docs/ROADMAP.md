@@ -209,19 +209,20 @@
 - **待办**: 真机/模拟器安装验证完整链路（服务器密码以 TIANSHU_LOGIN_PASSWORD 为准）
 - **预计**: 剩余 1 天（验证+上线）
 
-### AND-002 (TS-018) — 天枢操作真实手机（手机控制）
-- **状态**: ⬜ 待办（方案定稿）
-- **创建**: 2026-08-25
-- **方案**: `docs/ANDROID_CONTROL_PLAN.md`（完整技术方案）
-- **架构**: 节点树感知（无障碍服务）+ dispatchGesture 动作 + WebSocket 局域网通道 + PC 决策（手机=哑终端）
-- **真机**: 小米 17 · 澎湃 OS（无障碍保活/自动撤销坑已备案）
+### AND-002 (TS-018) — 天枢手机助手（全内置）
+- **状态**: 🔵 v2 方案定稿（v1 遥控器架构 08-26 反转作废，AgentService 复用）
+- **创建**: 2026-08-25 | **修订**: 2026-08-26
+- **方案**: `docs/ANDROID_CONTROL_PLAN.md` v2（合成 DeepDone 资产）
+- **定位**: 手机上的智能助手产品——对话即操作手机，DeepSeek API 驱动，全内置 APK，不依赖电脑/服务器
+- **参考**: `F:\hermes\deepdone\cli_proto\`（956 行可跑 Agent 循环+三级闸门+三模式，用户旧作）
 - **里程碑**:
-  - M1 通道+感知: WS 连通 + screen_state 读到节点树（1 会话）
-  - M2 动作闭环: tap/input/scroll/nav，**验收"调亮度到最低"全自动**（1 会话）
-  - M3 稳定+安全: 高危确认对话框 + 澎湃保活 + 20 任务长测（1 会话）
-  - M4 视觉路线: 截图+多模态，闭合 TS-004（二期，TS-019）
-- **安全**: 三爻闸门全量适用——金融 app 默认 deny、锁屏不操作、高危动作手机端弹确认
-- **不依赖**: 腾讯云（局域网/adb reverse 即可）、root（无障碍授权一次）
+  - MC0 技术验证: deepdone 工程构建 + Chaquopy 判定（Kotlin or Python）—— 半会话
+  - MC1 最小对话: AgentLoop+ChatUI+DS API 流式 —— 1 会话
+  - MC2 工具闭环: PhoneTools 接 AgentService + 闸门，**验收"调亮度到最低"** —— 1 会话
+  - MC3 产品化: 确认卡片+高危清单+Room 审计+澎湃保活 —— 1 会话
+  - MC4 增强: 视觉(TS-019)/语音/小组件 —— 二期
+- **安全**: 闸门全本地（AUTO/SUGGEST/REQUIRED=三爻手机版）+ 锁屏拒绝 + 金融 deny
+- **v1 遗产**: AgentService.kt 复用；/ws/phone PC 端点保留作调试后门
 
 ### TS-019 — 多模态输入（并入 AND-002 M4 触发）
 - **状态**: ⬜ 待办
