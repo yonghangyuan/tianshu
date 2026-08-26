@@ -1,36 +1,17 @@
-docs: TS-018 MC2 收口 — 工具闭环全通，亮度验收 95%
+fix: 写作能力三处根治 — prompt 解禁 + max_tokens 提升 + 默认模型对齐 v4-pro
 
-MC2 交付（F:\tianshu_dev\android，模拟器多轮真跑验证）:
-- AgentService: 单例化(instance/enabled) + isScreenLocked 红线
-  + openApp(包名直达) + setSlider(ACTION_SET_PROGRESS+RangeInfo换算,
-  多窗口找滑条) + drag(手势拖动) + dumpNodes 多窗口合并
-  (通知栏/quick settings 是 systemui 独立窗口, rootInActiveWindow
-  只读主窗口是下拉后读屏没变化的根因) + SeekBar 类节点保留
-- AgentBridge.execTool: 九工具分发 + screenState 节点树 LLM 紧凑文本
-- kotlin_bridge: Java 方法名修正(exec_tool→execTool——Chaquopy 保留
-  Java 命名, snake_case 查不到是工具桥静默失败的根因)
-- provider: HTTP 走 Kotlin OkHttp(httpPost 桥)——Chaquopy Python
-  线程 requests 第二次请求卡 DNS 的已知坑
-- PhoneBridge.kt 退役删除(v1 遗产)
-- system prompt: open_app 优先/常用包名表/亮度走通知栏(设置 App 里
-  Brightness 是入口不是滑条)
+用户反馈: 写 docx 字数极少稀拉。三层根因:
+1. 手机 agent.py 回答原则"简洁，适合手机屏幕阅读"对写作任务误伤
+   → 加豁免条款: 写作/文档/报告不受简洁约束，按需求写足
+2. 手机 provider max_tokens 4096（中文约2500字截断）→ 16384
+3. PC 流式/非流式默认 4096 同病 → base.py 四处 8192
+4. 手机默认模型 flash→v4-pro（与 PC providers.yaml default 对齐；
+   v4-pro 支持长文，flash 是轻量模型写文档天生弱一档）
 
-验证实录(模拟器 API 36):
-- 读屏: 完整节点树+语义解读 ✓
-- 导航: open_app 直达设置 → tap_text 进 Display ✓ (3轮内)
-- 全自主: 20 轮预算内 10+ 工具调用, 错误自纠(误进 chrome 自己退回) ✓
-- 亮度: Agent 自述完成但滑条拖动未生效——drag 坐标在 quick settings
-  展开不全时落空(Pixel 模拟器 Shade 面板对无障碍不可见, 只能靠
-  启发式坐标)。真机(MIUI 有独立亮度页+可见滑条)预期更好。
-  遗留 MC3: 滑条拖动成功率提升(截图辅助/重试策略)
+PC soul.md 新增"写作与文档生成原则"整节: 内容充分展开/
+篇幅跟需求走(1500-3000字起步)/先内容后工具/禁止空提纲糊弄。
 
-联调坑备案(全部实测):
-- 模拟器 force-stop/重装后无障碍授权被系统回收(settings put 无效,
-  必须走 UI 开关+Allow 对话框)
-- adb input text 空格=%s; keyevent 66(IME send)比 tap 发送键稳
-  (键盘弹出后按钮坐标漂移)
-- uiautomator dump 是 shell uid 视角, 能看到无障碍 windows 看不到的
-  systemui Shade 面板——两者能力不同源
+316 tests 全绿; 手机 APK 重建 37.7MB 待装。
 
 Co-Authored-By: jiojio <16404193+jiojio21@user.noreply.gitee.com>
 Co-Authored-By: DeepSeek <noreply@deepseek.com>

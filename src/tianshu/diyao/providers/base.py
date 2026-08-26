@@ -75,7 +75,7 @@ class BaseProvider(ABC):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> ProviderResponse:
         """发送消息到模型，返回统一响应。
 
@@ -95,7 +95,7 @@ class BaseProvider(ABC):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ):
         """流式发送消息到模型，逐 chunk yield。
 
@@ -256,7 +256,7 @@ class OpenAICompatibleProvider(BaseProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> ProviderResponse:
         import httpx
 
@@ -287,7 +287,7 @@ class OpenAICompatibleProvider(BaseProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ):
         """SSE 流式请求 —— 逐 chunk 解析 OpenAI 兼容 streaming 格式。
 
