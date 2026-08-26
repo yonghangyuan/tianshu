@@ -126,6 +126,9 @@ class AgentCore:
         from .tool_registry import ToolRegistry, ToolInfo
         self._tool_registry = ToolRegistry()
         self._tool_registry.scan_skills(self._skills.loader)
+        # MCP 工具执行回退: _execute_tool 兜底走 skills.execute,
+        # 不挂这层则 mcp_* 工具注册了也执行不到 (2026-08-26 开阳链路踩坑)
+        self._skills.set_registry_fallback(self._tool_registry)
 
         # 策略引擎（天爻）
         from .policy_engine import PolicyEngine

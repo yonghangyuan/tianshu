@@ -19,6 +19,10 @@ class SkillService:
         self._observer = SkillObserver()
         self._loaded = False
 
+    def set_registry_fallback(self, registry: Any) -> None:
+        """外部工具注册表回退——MCP 工具经 ToolRegistry 执行。"""
+        self._executor._registry_fallback = registry
+
     # ── 初始化 ─────────────────────────────────────────────────────
 
     def discover_and_load(self) -> None:

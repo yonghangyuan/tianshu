@@ -23,6 +23,9 @@ class SkillExecutor:
         self._loader = loader
         self._observer = observer
         self._handlers: dict[str, Callable[..., Any]] = {}
+        # 外部注册表回退（MCP 工具注册在 ToolRegistry 而非 skills loader；
+        # 没有这一层, _execute_tool → skills.execute 找不到 mcp_* 工具）
+        self._registry_fallback: Any = None
 
     def register_all(self) -> None:
         """注册所有已加载 Skills 的工具到执行表。"""
@@ -44,6 +47,10 @@ class SkillExecutor:
         if handler is None:
             # 尝试从 loader 查找
             handler = self._loader.get_tool_handler(tool_name)
+        if handler is None and self._registry_fallback is not None:
+            # MCP 等外部注册的工具走 ToolRegistry
+            info = self._registry_fallback.get(tool_name)
+            handler = info.handler if info else None
         if handler is None:
             return f"未知工具: {tool_name}"
 
