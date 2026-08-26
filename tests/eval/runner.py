@@ -220,6 +220,13 @@ class EvalRunner:
             import tempfile as _tf
             db_path = str(Path(_tf.gettempdir()) / f"tianshu_eval_{int(time.time()*1000)}.db")
             core.setup(registry, routing, "Test system prompt", db_path=db_path)
+            # 隔离记忆：eval 跑的是真 AgentCore，auto-remember 会把
+            # mock 响应（"的答案是测试响应。"）写进 ~/.tianshu 真实
+            # 记忆库——换临时 MemoryService，跑完即弃
+            from tianshu.memory.service import MemoryService
+            core._memory = MemoryService(
+                base_dir=Path(_tf.gettempdir()) / f"tianshu_eval_mem_{int(time.time()*1000)}"
+            )
 
             # 用 run_stream 捕获 ToolCallStart 事件——带真实 arguments
             import asyncio as _asyncio

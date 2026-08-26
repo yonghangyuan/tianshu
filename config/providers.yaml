@@ -72,7 +72,7 @@ providers:
         tags: [reasoning, local]
         max_tokens: 32768
       - id: qwen3:30b
-        tags: [reasoning, long_context, local]
+        tags: [reasoning, long_context, local, no_tools]
         max_tokens: 32768
     # no_tools 标记：该模型全程不带工具 schema（本地纯聊天兜底——
     # 工具列表会把弱模型带偏，对着 schema 自说自话）
