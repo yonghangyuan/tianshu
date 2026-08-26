@@ -195,6 +195,11 @@ class OpenAICompatibleProvider(BaseProvider):
         max_tokens: int,
     ) -> dict[str, Any]:
         """构造请求体。子类可覆写以注入 provider 专属参数。"""
+        # 本地推理（Ollama 等 localhost 端点）不限费，思考模型（qwen3/
+        # deepseek-r1）思维链动辄数千 token——放大预算避免正文被饿死；
+        # 云端按调用方给定值计（省钱纪律）
+        if any(h in self.base_url for h in ("127.0.0.1", "localhost")):
+            max_tokens = max(max_tokens, 16384)
         body: dict[str, Any] = {
             "model": self.model_id,
             "messages": messages,
@@ -238,7 +243,9 @@ class OpenAICompatibleProvider(BaseProvider):
             usage=usage,
             finish_reason=choice.get("finish_reason", "stop"),
             actual_model=raw.get("model", ""),
-            reasoning_content=message.get("reasoning_content", ""),
+            # Ollama qwen3 系非流式用 "reasoning"（流式 delta 同名）
+            reasoning_content=message.get("reasoning_content", "")
+            or message.get("reasoning", ""),
             raw=raw,
         )
 
@@ -377,8 +384,8 @@ class OpenAICompatibleProvider(BaseProvider):
         # 内容 delta
         content = delta.get("content", "") or ""
 
-        # reasoning_content（DeepSeek 等）
-        reasoning = delta.get("reasoning_content", "") or ""
+        # reasoning_content（DeepSeek 等）；Ollama qwen3 系用 "reasoning"
+        reasoning = delta.get("reasoning_content", "") or delta.get("reasoning", "") or ""
 
         # 增量 tool_calls
         raw_tool_deltas = delta.get("tool_calls")

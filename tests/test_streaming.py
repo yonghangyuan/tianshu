@@ -101,6 +101,35 @@ class TestParseStreamChunk:
         assert chunk is not None
         assert chunk.reasoning_content == "思考中..."
 
+    def test_parse_ollama_reasoning_delta(self):
+        """Ollama qwen3 系流式思维链字段名是 "reasoning"（非 reasoning_content）。
+
+        曾导致 3min 思考全被丢弃 + finish=length 正文空。"""
+        provider = _make_dummy_provider()
+        acc: dict[int, dict[str, str]] = {}
+        data = {
+            "choices": [{
+                "index": 0,
+                "delta": {"reasoning": "思考中..."},
+            }],
+        }
+        chunk = provider._parse_stream_chunk(data, acc)
+        assert chunk is not None
+        assert chunk.reasoning_content == "思考中..."
+
+    def test_build_body_local_max_tokens_boost(self):
+        """localhost 端点 max_tokens 放大到 16384（思考模型思维链不吃穷正文）。"""
+        provider = _make_dummy_provider()
+
+        class _LocalDummy(DummyProvider):
+            base_url = "http://127.0.0.1:11434/v1"
+
+        local = _LocalDummy()
+        cloud_body = provider._build_body([{"role": "user", "content": "hi"}], None, 0.7, 4096)
+        local_body = local._build_body([{"role": "user", "content": "hi"}], None, 0.7, 4096)
+        assert cloud_body["max_tokens"] == 4096  # 云端按原值（省钱纪律）
+        assert local_body["max_tokens"] == 16384  # 本地放大
+
     def test_parse_finish_with_usage(self):
         """解析带 usage 的 finish chunk。"""
         provider = _make_dummy_provider()
