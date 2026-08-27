@@ -210,7 +210,7 @@
 - **预计**: 剩余 1 天（验证+上线）
 
 ### AND-002 (TS-018) — 天枢手机助手（全内置）
-- **状态**: 🔵 MC0-MC2 完成（08-26，模拟器验证）；下一步真机首验或 MC3
+- **状态**: ✅ MC0-MC3 完成（MC3 于 08-27 收口并模拟器验收通过）；待真机验证
 - **创建**: 2026-08-25 | **修订**: 2026-08-26
 - **方案**: `docs/ANDROID_CONTROL_PLAN.md` v2（合成 DeepDone 资产）
 - **定位**: 手机上的智能助手产品——对话即操作手机，DeepSeek API 驱动，全内置 APK，不依赖电脑/服务器
@@ -223,7 +223,7 @@
   - ✅ MC1 最小对话（08-26）: 模拟器验收——用户输入→Python Agent→DS API→回复+Token 统计
   - ✅ MC2 工具闭环（08-26）: 九工具桥+多窗口读屏；模拟器实证全自主操作（读屏解读/直达设置/进Display/错误自纠）；亮度滑条拖动在 Pixel 模拟器落空（Shade 面板对无障碍不可见）→ 真机/MC3 收
   - ⬜ 真机首验: 小米17 装 APK+开无障碍+填 key，MIUI 亮度页滑条节点可见预期直接过
-  - ⬜ MC3 产品化: 滑条重试策略/截图辅助/Room 审计/澎湃保活/确认卡片打磨 —— 1 会话
+  - ✅ MC3 产品化（08-27）: 前台服务进度通知（切后台可见+防冻结，任务毕干净撤除）/ 确认通知允许·拒绝+60s 超时 / 金融包名 deny 14 包（yolo 不可越，实测拦支付宝）/ SQLite 动作审计（actions 表留痕实证）/ set_slider 降级链（读屏 bounds→drag 插值）。模拟器验收：进度通知实时到第 12 轮、deny 拦截、确认通知双向应答、12 轮长任务自纠全通；337 tests。两处验收修复: startForeground 显式传 SPECIAL_USE type（API 34+ 不传通知不挂）、stop 后 update 复活通知加 running 门闸
   - ⬜ MC4 增强: 视觉(TS-019)/语音/小组件 —— 二期
 - **安全**: 闸门全本地（AUTO/SUGGEST/REQUIRED=三爻手机版）+ 锁屏拒绝 + 金融 deny（MC3）
 - **已修关键坑**（备案见 git log 89fe384）: Chaquopy Python 线程 requests 卡 DNS→Kotlin OkHttp 桥；Java 方法名在 Python 侧保留驼峰（execTool 非 exec_tool）；模拟器重装/force-stop 后无障碍授权回收；多窗口 dumpNodes（systemui 通知栏盲区）
