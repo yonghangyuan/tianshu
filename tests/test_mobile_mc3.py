@@ -303,3 +303,73 @@ class TestScreenFormatContract:
             line,
         )
         assert m is not None
+
+
+class TestAuditSinkKotlinObject:
+    """2026-09-02 模拟器验收发现的生产 bug 回归锁。
+
+    Kotlin 侧曾把裸 KotlinCallbacks 对象传给 set_audit_sink——
+    Chaquopy Java 对象没有 __call__，policies.audit 里
+    _audit_sink(...) 直接 TypeError，被 except 静默吞掉，
+    actions 审计表在生产环境永远为空（test_audit_calls_sink 用
+    Python 函数 sink 所以没抓住）。修复：kotlin_bridge.install
+    内部经 _wrap 绑定 audit 方法。
+    """
+
+    def test_java_style_object_sink_needs_wrap(self):
+        """裸 Java 式对象（方法可 getattr，无 __call__）直接当 sink 必失败。"""
+        class JavaStyleCallbacks:
+            def audit(self, tool, args, result, decision, ts):
+                return "ok"
+
+        bare = JavaStyleCallbacks()
+        with pytest.raises(TypeError):
+            bare("tap", "{}", "{}", "auto", "0")  # Java 对象不可直接调用
+
+    def test_install_binds_audit_via_wrap(self, tmp_path):
+        """install() 必须把 audit 方法经 _wrap 装进 policies（而非裸对象）。"""
+        import importlib.util as _ilu
+        import sys
+
+        dev_root = Path("F:/tianshu_dev/android/app/src/main/python")
+        if not (dev_root / "kotlin_bridge.py").exists():
+            pytest.skip("tianshu_dev 手机侧源码不在本机")
+
+        # 在隔离世加载 kotlin_bridge（不碰全局 policies）
+        saved = {}
+        for mod_name in ("kotlin_bridge", "policies", "tools", "agent"):
+            saved[mod_name] = sys.modules.pop(mod_name, None)
+        try:
+            for mod_name in ("policies", "tools", "agent", "kotlin_bridge"):
+                spec = _ilu.spec_from_file_location(
+                    mod_name, dev_root / f"{mod_name}.py"
+                )
+                sys.modules[mod_name] = module = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(module)
+
+            calls = []
+
+            class Agent:
+                pass
+
+            class Callbacks:
+                def audit(self, tool, args, result, decision, ts):
+                    calls.append((tool, decision))
+                    return None
+
+            import policies as fresh_policies
+            fresh_policies.set_audit_sink(None)
+            a = Agent()
+            sys.modules["kotlin_bridge"].install(a, Callbacks())
+
+            # install 后 audit() 应真实到达 Callbacks.audit
+            fresh_policies.audit("tap", {"x": 1}, {"success": True}, "auto")
+            assert calls == [("tap", "auto")]
+        finally:
+            for mod_name, mod in saved.items():
+                if mod is not None:
+                    sys.modules[mod_name] = mod
+                else:
+                    sys.modules.pop(mod_name, None)
+            import policies as prod_policies
+            prod_policies.set_audit_sink(None)
