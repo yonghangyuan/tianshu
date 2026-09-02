@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>天枢 · 星群</title>
 <style>
 /* ── Apple 设计基线：中性暗色 + 系统字阶 + 克制层次 ───────── */
@@ -13,9 +16,10 @@
   --ease:cubic-bezier(.32,.72,0,1);          /* Apple 曲线 */
   --dur-in:.28s;
 }
-*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--tx);display:flex;overflow:hidden;font-size:14px}
+html{touch-action:manipulation}                /* 去掉移动端双击缩放延迟 */
 
 /* ── 侧栏 ─────────────────────────────────────────────── */
 nav{width:232px;background:var(--surface);padding:14px 16px;border-right:.5px solid var(--sep);display:flex;flex-direction:column;flex-shrink:0}
@@ -111,7 +115,21 @@ button.ghost{background:var(--surface2)}
 .flow-step.fail .glyph{color:var(--err)}
 
 @media (max-width:1080px){.dash{display:none}}
-@media (max-width:760px){nav{display:none}}
+@media (max-width:760px){
+  nav{display:none}
+  /* ── 移动端专项：全屏画布 + 安全区 + 触屏尺寸 ───────── */
+  #chat{padding:12px 12px 4px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+  .msg{gap:8px;margin-bottom:8px}
+  .msg .tx{font-size:15.5px;padding:10px 14px}          /* 触屏正文字号 ≥15px（Apple HIG） */
+  .msg .av{width:28px;height:28px}
+  .typing .dots{padding:12px 15px;height:38px}
+  #bar{padding:8px 10px calc(8px + env(safe-area-inset-bottom));gap:6px}
+  #ni{display:none}                                       /* 名字记住即可，移动端省空间 */
+  #bar input{padding:11px 14px;font-size:16px}            /* ≥16px 防 iOS 聚焦自动放大 */
+  button{padding:11px 16px}
+  .reasoning{margin-left:36px}
+  .tool{padding-left:36px}
+}
 </style>
 </head>
 <body>
@@ -192,6 +210,16 @@ function atBottom(){return chat.scrollHeight-chat.scrollTop-chat.clientHeight<48
 let stickBottom=true;
 chat.addEventListener('scroll',()=>{stickBottom=atBottom()},{passive:true});
 function follow(){if(stickBottom)chat.scrollTop=chat.scrollHeight}
+// 软键盘弹出（visual viewport 变矮）→ 输入栏随视觉视口贴底，聊天区自动变矮后回到底部
+if(window.visualViewport){
+  const vv=window.visualViewport;
+  vv.addEventListener('resize',()=>{
+    document.getElementById('bar').style.transform=`translateY(${Math.max(0,window.innerHeight-vv.height-vv.offsetTop)}px)`;
+    follow();
+  });
+}
+// 消息长按选择时暂停跟随，避免选择跳变
+chat.addEventListener('selectstart',()=>{stickBottom=false},{passive:true});
 
 // ── 消息渲染（增量 DOM，不重建）────────────────────────────
 function esc_(s){return e(s)}
