@@ -451,7 +451,16 @@ async def chat_page(request: Request):
     if not _check_auth(request):
         return RedirectResponse("/login")
     html = Path(__file__).parent / "chat.html"
-    return HTMLResponse(html.read_text(encoding="utf-8"))
+    # 把当前 token 注入页面，供 JS 发起 WebSocket（cookie 对 WS 可用但 query 显式更稳）
+    token = request.cookies.get("tianshu_token", "") or request.query_params.get("token", "")
+    page = html.read_text(encoding="utf-8")
+    if token:
+        page = page.replace(
+            "loadHistory();",
+            f"S.setItem('tianshu_token',{json.dumps(token)});loadHistory();",
+            1,
+        )
+    return HTMLResponse(page)
 
 
 @app.get("/models")
@@ -569,6 +578,92 @@ async def dispatch_agent(agent_name: str, request: Request, _=Depends(require_au
 
 # ── WebSocket 群聊 ──────────────────────────────────────────────
 
+# 群聊 Agent 会话（跨消息保持上下文；群聊场景全 auto 确认）
+_chat_agent_ctx: AgentContext | None = None
+
+
+async def _persist_chat_msg(sender: str, content: str, extra: dict | None = None) -> int:
+    """消息入内存历史 + SQLite。返回消息 id。"""
+    global _chat_counter
+    _chat_counter += 1
+    entry = {"id": _chat_counter, "from": sender, "content": content, "time": time.time()}
+    if extra:
+        entry.update(extra)
+    _chat_messages.append(entry)
+    if len(_chat_messages) > MAX_CHAT_MSGS:
+        _chat_messages.pop(0)
+    if _chat_db_ready:
+        try:
+            import aiosqlite
+            async with aiosqlite.connect(str(_project_root / "tianshu.db")) as db:
+                await db.execute("INSERT INTO chat_messages VALUES(?,?,?,?)",
+                                 (_chat_counter, sender, content, time.time()))
+                await db.commit()
+        except Exception:
+            pass
+    return _chat_counter
+
+
+async def _run_agent_stream(user_input: str, sender: str) -> None:
+    """群聊 Agent 流式执行：run_stream 逐事件广播，结束时整条落库。
+
+    事件协议（前端据此做打字机/工具指示）：
+    - typing      Agent 开始工作（前端显示三点指示器）
+    - reasoning   思维链增量（可折叠）
+    - chat_delta  正文 token 增量
+    - tool        工具调用结果
+    - chat        完整消息（含 id，落库后广播，前端收尾）
+    """
+    global _chat_agent_ctx
+    from tianshu.sdk.models import (
+        ContentDelta, ReasoningDelta, ToolCallStart,
+        ToolCallResult, StreamError,
+    )
+
+    # 群聊上下文（近 10 条，同 chat_send 的语义）
+    context = "\n".join(f"[{m['from']}]: {m['content'][:200]}"
+                        for m in _chat_messages[-10:] if m["from"] != "天枢")
+    full_input = f"群聊上下文:\n{context}\n\n用户 {sender}: {user_input}" if context else user_input
+
+    if _chat_agent_ctx is None:
+        _chat_agent_ctx = AgentContext(session_id="chat_group")
+
+    # 群聊场景：auto 模式（网页端没有确认 UI，交互式确认会 60s 超时死等）
+    old_mode, old_auto = _core._mode, getattr(_core, "_automode", False)
+    _core._mode, _core._automode = "auto", True
+
+    await _broadcast({"type": "typing", "from": "天枢"})
+    full_text: list[str] = []
+    tools_used: list[str] = []
+    try:
+        async for event in _core.run_stream(
+            AgentRequest(input=full_input, task_type="conversation"),
+            ctx=_chat_agent_ctx,
+        ):
+            if isinstance(event, ContentDelta):
+                full_text.append(event.text)
+                await _broadcast({"type": "chat_delta", "from": "天枢", "content": event.text})
+            elif isinstance(event, ReasoningDelta):
+                await _broadcast({"type": "reasoning", "from": "天枢", "content": event.text})
+            elif isinstance(event, ToolCallStart):
+                await _broadcast({"type": "tool_start", "name": event.tool_name})
+            elif isinstance(event, ToolCallResult):
+                tools_used.append(event.tool_name)
+                await _broadcast({"type": "tool", "name": event.tool_name, "ok": event.success})
+            elif isinstance(event, StreamError):
+                await _broadcast({"type": "chat_delta", "from": "天枢",
+                                  "content": f"\n⚠️ {event.message}"})
+    finally:
+        _core._mode, _core._automode = old_mode, old_auto
+
+    content = "".join(full_text) or "(空回复)"
+    msg_id = await _persist_chat_msg("天枢", content,
+                                     {"tools": tools_used} if tools_used else None)
+    await _broadcast({"type": "chat", "from": "天枢", "content": content,
+                      "id": msg_id, "time": time.time(),
+                      "tools": [{"name": t, "ok": True} for t in tools_used]})
+
+
 @app.websocket("/ws")
 async def websocket_chat(ws: WebSocket):
     # 鉴权检查: cookie 或 query token
@@ -614,27 +709,21 @@ async def websocket_chat(ws: WebSocket):
                 await _broadcast({"type": "join", "from": sender, "members": list(_ws_names.values())})
 
             if msg_type == "chat" and content:
-                # 广播用户消息
-                await _broadcast({"type": "chat", "from": sender, "content": content})
+                # 广播用户消息（带 id，前端增量渲染用）
+                global _chat_counter
+                _chat_counter += 1
+                msg_id = _chat_counter
+                _chat_users.add(sender)
+                await _broadcast({
+                    "type": "chat", "from": sender, "content": content,
+                    "id": msg_id, "time": time.time(),
+                })
 
-                # 检测 @天枢
+                # 检测 @天枢 → 流式逐 token 广播
                 if _core and ("@天枢" in content or "@tianshu" in content.lower()):
                     user_input = content.replace("@天枢", "").replace("@tianshu", "").strip()
                     if user_input:
-                        resp = await _core.run(AgentRequest(input=user_input, task_type="conversation"))
-                        tools_info = [{"name": t.get("name", "?"), "ok": t.get("success", True)} for t in resp.tool_calls]
-                        await _broadcast({
-                            "type": "chat", "from": "天枢",
-                            "content": resp.content or "(空回复)",
-                            "tools": tools_info,
-                        })
-                        # 广播工具事件
-                        for t in resp.tool_calls:
-                            await _broadcast({
-                                "type": "tool",
-                                "name": t.get("name", "?"),
-                                "ok": t.get("success", True),
-                            })
+                        await _run_agent_stream(user_input, sender)
 
     except WebSocketDisconnect:
         pass

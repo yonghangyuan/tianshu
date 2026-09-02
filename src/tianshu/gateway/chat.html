@@ -4,55 +4,122 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>天枢 · 星群</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,sans-serif;background:#0a0e27;color:#c9d1d9;height:100vh;display:flex}
-nav{width:220px;background:#131a35;padding:16px;border-right:1px solid #1e2a4a;display:flex;flex-direction:column}
-nav h2{font-size:16px;color:#e2c860;margin-bottom:12px}
-nav .stat{font-size:12px;color:#64748b;padding:3px 0}
-#members{margin-top:auto;font-size:12px}
-#members h3{color:#94a3b8;margin-bottom:6px}
-.member{padding:3px 0;display:flex;gap:4px;align-items:center}
-.member .dot{width:6px;height:6px;border-radius:3px;background:#4ade80;display:inline-block}
-main{flex:1;display:flex;flex-direction:column}
-#chat{flex:1;overflow-y:auto;padding:16px}
-.msg{margin-bottom:10px;display:flex;gap:8px}
-.msg .av{width:28px;height:28px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0;color:#fff}
-.msg.bot .av{background:#1e3a5f}
-.msg.user .av{background:#1e40af}
-.msg .bd{flex:1}
-.msg .nm{font-size:11px;color:#64748b;margin-bottom:2px}
-.msg .tx{background:#131a35;padding:7px 10px;border-radius:6px;font-size:13px;line-height:1.5;word-break:break-word}
-.msg.user .tx{background:#1e40af}
-.msg.bot .tx{background:#1e293b}
-.tool{font-size:11px;color:#475569;padding:3px 10px;display:flex;gap:4px;align-items:center}
-.tool .dot{width:5px;height:5px;border-radius:3px}
-.tool .dot.ok{background:#4ade80}.tool .dot.fail{background:#ef4444}
-.event{text-align:center;color:#475569;font-size:11px;padding:3px 0}
-#bar{display:flex;gap:6px;padding:10px 16px;border-top:1px solid #1e2a4a;background:#0f1630}
-#bar input{padding:8px;border-radius:6px;border:1px solid #1e2a4a;background:#131a35;color:#c9d1d9;font-size:13px}
-#ni{width:70px}#mi{flex:1}
-button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;font-weight:600}
-  .dash{width:280px;background:#0f1630;border-left:1px solid #1e2a4a;padding:12px;overflow-y:auto;font-size:12px}
-  .dash h3{color:#94a3b8;font-size:13px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #1e2a4a}
-  .dash h3:first-child{margin-top:0}
-  .agent-card{background:#131a35;border-radius:6px;padding:8px;margin-bottom:6px;border:1px solid #1e2a4a}
-  .agent-card .name{font-weight:600;color:#e2c860;margin-bottom:2px}
-  .agent-card .status{font-size:11px}
-  .agent-card .status.idle{color:#64748b}.agent-card .status.working{color:#4ade80}.agent-card .status.error{color:#ef4444}
-  .audit-entry{background:#131a35;border-radius:4px;padding:6px;margin-bottom:4px;font-size:11px;border-left:2px solid #2563eb}
-  .audit-entry .id{color:#60a5fa}.audit-entry .tool-name{color:#94a3b8}
-  .flow-step{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px}
-  .flow-step .arrow{color:#475569}
-  .flow-step .node{background:#1e3a5f;padding:2px 6px;border-radius:3px;color:#60a5fa}
-  .flow-step .tool-name{color:#94a3b8}
+/* ── Apple 设计基线：中性暗色 + 系统字阶 + 克制层次 ───────── */
+:root{
+  --bg:#000;--surface:#1c1c1e;--surface2:#2c2c2e;--surface3:#3a3a3c;
+  --sep:#38383a;--tx:#f5f5f7;--tx2:#98989d;--tx3:#636366;
+  --accent:#0a84ff;--ok:#30d158;--err:#ff453a;--gold:#ffd60a;
+  --r-lg:20px;--r-md:14px;--r-sm:9px;
+  --ease:cubic-bezier(.32,.72,0,1);          /* Apple 曲线 */
+  --dur-in:.28s;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--tx);display:flex;overflow:hidden;font-size:14px}
+
+/* ── 侧栏 ─────────────────────────────────────────────── */
+nav{width:232px;background:var(--surface);padding:14px 16px;border-right:.5px solid var(--sep);display:flex;flex-direction:column;flex-shrink:0}
+nav h2{font-size:17px;font-weight:700;letter-spacing:-.2px;margin-bottom:2px}
+nav h2 a{color:var(--tx);text-decoration:none}
+nav .sub{font-size:11px;color:var(--tx3);margin-bottom:14px}
+nav .stat{font-size:12px;color:var(--tx2);padding:2px 0}
+#members{margin-top:auto;font-size:12px;overflow-y:auto}
+#members h3{color:var(--tx3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.member{padding:4px 0;display:flex;gap:7px;align-items:center;color:var(--tx2)}
+.member .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex-shrink:0}
+.member.is-ai .dot{background:var(--gold)}
+
+/* ── 主区 ──────────────────────────────────────────────── */
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+#chat{flex:1;overflow-y:auto;padding:20px 24px 8px;scroll-behavior:smooth}
+#chat::-webkit-scrollbar{width:8px}
+#chat::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:4px}
+.event{text-align:center;color:var(--tx3);font-size:11px;padding:6px 0}
+
+/* ── 消息：iMessage 式气泡 ─────────────────────────────── */
+.msg{margin-bottom:10px;display:flex;gap:9px;max-width:720px;opacity:0;transform:translateY(10px) scale(.98);animation:msg-in var(--dur-in) var(--ease) forwards}
+@keyframes msg-in{to{opacity:1;transform:none}}
+.msg .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;color:#fff}
+.msg.bot .av{background:linear-gradient(145deg,#3a3a3c,#2c2c2e);color:var(--gold)}
+.msg.user .av{background:linear-gradient(145deg,#0a84ff,#0066d6)}
+.msg .bd{flex:1;min-width:0}
+.msg .nm{font-size:11px;color:var(--tx3);margin-bottom:3px}
+.msg .nm .ts{font-size:10px;color:var(--tx3);opacity:.7;margin-left:6px}
+.msg .tx{padding:9px 14px;border-radius:var(--r-lg);font-size:14px;line-height:1.55;word-break:break-word;overflow-wrap:anywhere}
+.msg.user .tx{background:var(--accent);color:#fff;border-bottom-right-radius:7px}
+.msg.bot .tx{background:var(--surface2);border-bottom-left-radius:7px}
+.msg .tx a{color:#64b5ff}
+.msg .tx code{background:rgba(255,255,255,.09);padding:1.5px 5px;border-radius:5px;font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:12.5px}
+.msg .tx h2,.msg .tx h3,.msg .tx h4{margin:8px 0 4px;font-size:14.5px}
+.msg .tx ul{margin:4px 0 4px 18px}
+.msg .tx table{border-collapse:collapse;margin:6px 0;font-size:12.5px}
+.msg .tx th,.msg .tx td{border:.5px solid var(--sep);padding:4px 9px;text-align:left}
+.msg .tx hr{border:none;border-top:.5px solid var(--sep);margin:8px 0}
+
+/* ── 流式中的气泡：光标呼吸 ─────────────────────────────── */
+.msg.streaming .tx::after{content:'▁';color:var(--accent);animation:blink 1s steps(2) infinite;margin-left:1px;font-weight:700}
+@keyframes blink{50%{opacity:.15}}
+
+/* ── 思维链（可折叠，生成中显示） ──────────────────────── */
+.reasoning{max-width:720px;margin:-4px 0 10px 39px;font-size:12px;color:var(--tx3)}
+.reasoning summary{cursor:pointer;list-style:none;padding:3px 0;user-select:none}
+.reasoning summary::-webkit-details-marker{display:none}
+.reasoning summary::before{content:'◦ 思考中 ';letter-spacing:.3px}
+.reasoning[open] summary::before{content:'◦ 思维链 '}
+.reasoning pre{white-space:pre-wrap;padding:6px 10px;background:var(--surface);border-radius:var(--r-sm);margin-top:4px;max-height:180px;overflow-y:auto;font-family:inherit;line-height:1.5}
+
+/* ── iMessage 三点打字指示器 ───────────────────────────── */
+.typing{display:flex;gap:9px;margin-bottom:12px;max-width:720px;animation:msg-in var(--dur-in) var(--ease) forwards}
+.typing .av{width:30px;height:30px;border-radius:50%;background:linear-gradient(145deg,#3a3a3c,#2c2c2e);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--gold);flex-shrink:0}
+.typing .dots{background:var(--surface2);border-radius:var(--r-lg);border-bottom-left-radius:7px;padding:13px 16px;display:flex;gap:5px;align-items:center;height:40px}
+.typing .dots span{width:8px;height:8px;border-radius:50%;background:var(--tx3);animation:bounce 1.2s var(--ease) infinite}
+.typing .dots span:nth-child(2){animation-delay:.15s}
+.typing .dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+
+/* ── 工具行 ────────────────────────────────────────────── */
+.tool{font-size:11px;color:var(--tx3);padding:2px 0 2px 39px;display:flex;gap:6px;align-items:center;max-width:720px;animation:msg-in var(--dur-in) var(--ease) forwards}
+.tool .glyph{width:16px;height:16px;border-radius:5px;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;font-size:9px}
+.tool.ok .glyph{background:rgba(48,209,88,.18);color:var(--ok)}
+.tool.fail .glyph{background:rgba(255,69,58,.18);color:var(--err)}
+
+/* ── 输入栏 ────────────────────────────────────────────── */
+#bar{display:flex;gap:8px;padding:12px 20px 16px;border-top:.5px solid var(--sep);background:rgba(28,28,30,.92);backdrop-filter:saturate(180%) blur(20px)}
+#bar input{padding:9px 14px;border-radius:var(--r-md);border:.5px solid var(--sep);background:var(--surface2);color:var(--tx);font-size:14px;outline:none;transition:border-color .18s var(--ease),background .18s var(--ease)}
+#bar input:focus{border-color:var(--accent);background:var(--surface3)}
+#ni{width:88px}
+#mi{flex:1}
+button{padding:9px 18px;border-radius:var(--r-md);border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13.5px;font-weight:600;transition:transform .12s var(--ease),opacity .12s,background .15s}
+button:active{transform:scale(.96)}
+button.ghost{background:var(--surface2)}
+#ac{display:none;position:absolute;bottom:100%;left:0;right:0;margin-bottom:6px;background:var(--surface3);border:.5px solid var(--sep);border-radius:var(--r-md);max-height:180px;overflow-y:auto;z-index:99;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+#ac .item{padding:7px 12px;cursor:pointer;font-size:13px}
+#ac .item.sel{background:var(--accent);border-radius:var(--r-sm)}
+
+/* ── 右侧仪表盘 ────────────────────────────────────────── */
+.dash{width:272px;background:var(--surface);border-left:.5px solid var(--sep);padding:14px;overflow-y:auto;font-size:12px;flex-shrink:0}
+.dash h3{color:var(--tx2);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 8px;padding-bottom:5px;border-bottom:.5px solid var(--sep)}
+.dash h3:first-child{margin-top:0}
+.agent-card{background:var(--surface2);border-radius:var(--r-sm);padding:9px 11px;margin-bottom:6px}
+.agent-card .name{font-weight:600;font-size:12.5px;margin-bottom:2px}
+.agent-card .status{font-size:11px;color:var(--tx3)}
+.agent-card .status.working{color:var(--ok)}
+.audit-entry{background:var(--surface2);border-radius:6px;padding:6px 9px;margin-bottom:4px;font-size:11px}
+.audit-entry .id{color:#64b5ff}
+.flow-step{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px;color:var(--tx2)}
+.flow-step .glyph{color:var(--ok)}
+.flow-step.fail .glyph{color:var(--err)}
+
+@media (max-width:1080px){.dash{display:none}}
+@media (max-width:760px){nav{display:none}}
 </style>
 </head>
 <body>
 <nav>
-  <h2><a href="/" style="color:#e2c860;text-decoration:none">天枢·星群</a></h2>
-  <div class="stat"><a href="/" style="color:#60a5fa">← 首页</a> | <a href="/chat/agents" style="color:#60a5fa">Agent</a></div>
-  <div class="stat" id="model">模型: -</div>
-  <div class="stat" id="skills">工具: -</div>
+  <h2><a href="/">天枢·星群</a></h2>
+  <div class="sub">摇光 · 开阳 · 玉衡 · 天权</div>
+  <div class="stat" id="model">模型 -</div>
+  <div class="stat" id="skills">工具 -</div>
   <div id="members"><h3>在线</h3></div>
 </nav>
 <main>
@@ -61,27 +128,24 @@ button{padding:8px 16px;border-radius:6px;border:none;background:#2563eb;color:#
     <input id="ni" placeholder="名字" value="">
     <div style="position:relative;flex:1">
       <input id="mi" placeholder="输入消息，@ 提及某人..." onkeypress="if(event.key==='Enter')send()" oninput="onInput()" onkeydown="onKey(event)" autocomplete="off">
-      <div id="ac" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:#1e293b;border:1px solid #334155;border-radius:6px;max-height:160px;overflow-y:auto;z-index:99"></div>
+      <div id="ac"></div>
     </div>
     <input type="file" id="fi" style="display:none" onchange="uploadFile()">
-    <button onclick="document.getElementById('fi').click()" style="background:#334155">📎</button>
+    <button onclick="document.getElementById('fi').click()" class="ghost" title="附件">📎</button>
     <button onclick="send()">发送</button>
   </div>
 </main>
-<aside class="dash" id="dash">
+<aside class="dash">
   <h3>Agent 节点</h3>
-  <div id="agent-list">
-    <div class="agent-card"><div class="name">天枢</div><div class="status idle">◉ 待命中</div></div>
-  </div>
+  <div id="agent-list"><div class="agent-card"><div class="name">天枢</div><div class="status">◉ 待命中</div></div></div>
   <h3>工具调用</h3>
-  <div id="tool-log"><div style="color:#475569">暂无活动</div></div>
+  <div id="tool-log"><div style="color:var(--tx3)">暂无活动</div></div>
   <h3>审计追踪</h3>
-  <div id="audit-log"><div style="color:#475569">等待决策...</div></div>
+  <div id="audit-log"><div style="color:var(--tx3)">等待决策...</div></div>
 </aside>
-  </div>
-</main>
+
 <script>
-// 轻量 Markdown 渲染（零依赖）
+// ── 轻量 Markdown 渲染（零依赖）────────────────────────────
 function md2html(s){
   s = String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -91,11 +155,10 @@ function md2html(s){
     .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
     .replace(/【(.+?)】/g,'<b>$1</b>')
     .replace(/\*(.+?)\*/g,'<i>$1</i>')
-    .replace(/`([^`]+)`/g,'<code style="background:#1e293b;padding:1px 4px;border-radius:3px">$1</code>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
     .replace(/^\- (.+)$/gm,'<li>$1</li>')
     .replace(/(<li>.*<\/li>)/s,function(m){return '<ul>'+m+'</ul>'})
     .replace(/───+/g,'<hr>');
-  // 表格: | a | b | → <table>
   if(s.includes('|')){
     let lines=s.split('\n'),table=[],inTable=false,result=[];
     for(let l of lines){
@@ -114,96 +177,197 @@ function md2html(s){
   }
   return s.replace(/\n/g,'<br>');
 }
+function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
+// ── 状态 ──────────────────────────────────────────────────
 const S = localStorage;
 let name = S.getItem('ts_name')||'';
-let lastId = 0;
 let shown = new Set();
 document.getElementById('ni').value = name;
 document.getElementById('ni').onchange = function(){name=this.value;S.setItem('ts_name',name)};
 
-function e(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+// ── 智能滚动：贴底才跟随，上翻不打扰 ───────────────────────
+const chat=document.getElementById('chat');
+function atBottom(){return chat.scrollHeight-chat.scrollTop-chat.clientHeight<48}
+let stickBottom=true;
+chat.addEventListener('scroll',()=>{stickBottom=atBottom()},{passive:true});
+function follow(){if(stickBottom)chat.scrollTop=chat.scrollHeight}
 
-function addToolLog(name,ok){
-  const tl=document.getElementById('tool-log');
-  const d=document.createElement('div');d.className='flow-step';
-  d.innerHTML='<span class=arrow>→</span><span class=node>'+(ok?'✓':'✗')+'</span><span class=tool-name>'+name+'</span>';
-  tl.insertBefore(d,tl.firstChild);
-  if(tl.children.length>20)tl.removeChild(tl.lastChild);
-  // 更新Agent状态
-  const al=document.getElementById('agent-list');
-  al.innerHTML='<div class=agent-card><div class=name>天枢</div><div class="status working">● 工作中 ('+name+')</div></div>';
+// ── 消息渲染（增量 DOM，不重建）────────────────────────────
+function esc_(s){return e(s)}
+function fileBody(tx){
+  const fn=(tx.split('📎 上传了文件:')[1]||tx.split('📎 已分享文件:')[1]||'').split('(')[0].trim();
+  return '📎 <a href="/chat/download/'+fn+'">'+fn+'</a>';
 }
-
 function addMsg(cls,from,tx,id,time){
   if(shown.has(id)) return; shown.add(id);
   const d=document.createElement('div');d.className='msg '+cls;
   const av=from==='天枢'?'枢':(from[0]||'?');
-  const nameCls = from===name?' (你)':'';
-  let body = from==='天枢' ? md2html(tx) : e(tx);
-  // 文件消息 → 渲染为下载链接
-  if(tx.includes('📎 上传了文件:')||tx.includes('📎 已分享文件:')){
-    const fn=(tx.split('📎 上传了文件:')[1]||tx.split('📎 已分享文件:')[1]||'').split('(')[0].trim();
-    body='📎 <a href="/chat/download/'+fn+'" style="color:#60a5fa">'+fn+'</a> (点击下载)';
-  }
+  const tag=from===name?' (你)':'';
+  let body = from==='天枢' ? md2html(tx) : esc_(tx);
+  if(tx.includes('📎 上传了文件:')||tx.includes('📎 已分享文件:')) body=fileBody(tx);
   const ts = time ? new Date(time*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : '';
-  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+nameCls+' <span style="color:#475569;font-size:10px">'+ts+'</span></div><div class="tx">'+body+'</div></div>';
-  const chat=document.getElementById('chat');
-  chat.appendChild(d); d.scrollIntoView({behavior:'smooth'});
-  while(chat.children.length>100) chat.removeChild(chat.firstChild);
+  d.innerHTML='<div class="av">'+av+'</div><div class="bd"><div class="nm">'+e(from)+tag+' <span class="ts">'+ts+'</span></div><div class="tx">'+body+'</div></div>';
+  chat.appendChild(d); follow();
+  while(chat.children.length>120) chat.removeChild(chat.firstChild);
 }
 
-async function poll(){
+// ── 流式气泡：delta 追加，走完收尾 ────────────────────────
+let streamEl=null, streamBuf='', streamRaf=0;
+function streamBegin(){
+  streamEnd(true);
+  hideTyping();
+  const d=document.createElement('div');d.className='msg bot streaming';
+  d.innerHTML='<div class="av">枢</div><div class="bd"><div class="nm">天枢</div><div class="tx"></div></div>';
+  chat.appendChild(d);
+  streamEl=d; streamBuf=''; stickBottom=true; follow();
+}
+function streamDelta(text){
+  if(!streamEl) streamBegin();
+  streamBuf+=text;
+  if(!streamRaf) streamRaf=requestAnimationFrame(()=>{          // rAF 合帧，token 高频不打满主线程
+    streamRaf=0;
+    if(streamEl) streamEl.querySelector('.tx').innerHTML=md2html(streamBuf);
+    follow();
+  });
+}
+function streamEnd(silent){
+  if(streamRaf){cancelAnimationFrame(streamRaf);streamRaf=0}
+  if(streamEl){
+    const el=streamEl; streamEl=null;
+    el.querySelector('.tx').innerHTML=md2html(streamBuf||'(空回复)');
+    el.classList.remove('streaming');
+  }
+}
+
+// ── 三点打字指示器 ────────────────────────────────────────
+let typingEl=null;
+function showTyping(){
+  hideTyping();
+  typingEl=document.createElement('div');typingEl.className='typing';
+  typingEl.innerHTML='<div class="av">枢</div><div class="dots"><span></span><span></span><span></span></div>';
+  chat.appendChild(typingEl); follow();
+}
+function hideTyping(){if(typingEl){typingEl.remove();typingEl=null}}
+
+// ── 思维链（折叠面板，流式追加）───────────────────────────
+let reasonEl=null, reasonBuf='';
+function reasonDelta(text){
+  if(!reasonEl){
+    reasonEl=document.createElement('details');reasonEl.className='reasoning';reasonEl.open=true;
+    reasonEl.innerHTML='<summary></summary><pre></pre>';
+    chat.appendChild(reasonEl);
+  }
+  reasonBuf+=text;
+  reasonEl.querySelector('pre').textContent=reasonBuf.slice(-4000);   // 只留尾部
+  follow();
+}
+function reasonEnd(){if(reasonEl){reasonEl.open=false}}
+
+// ── 工具行 ────────────────────────────────────────────────
+function addToolRow(nm,ok){
+  const tl=document.getElementById('tool-log');
+  const d=document.createElement('div');d.className='flow-step'+(ok?'':' fail');
+  d.innerHTML='<span class="glyph">'+(ok?'✓':'✗')+'</span><span>'+e(nm)+'</span>';
+  tl.insertBefore(d,tl.firstChild);
+  if(tl.children.length>20)tl.removeChild(tl.lastChild);
+  // 消息区工具行
+  const r=document.createElement('div');r.className='tool '+(ok?'ok':'fail');
+  r.innerHTML='<span class="glyph">'+(ok?'✓':'✗')+'</span><span>'+e(nm)+'</span>';
+  if(reasonEl&&reasonEl.parentNode===chat)chat.insertBefore(r,reasonEl);
+  else if(streamEl&&streamEl.parentNode===chat)chat.insertBefore(r,streamEl);
+  else chat.appendChild(r);
+  follow();
+}
+function setAgentStatus(working,toolName){
+  document.getElementById('agent-list').innerHTML=
+    '<div class="agent-card"><div class="name">天枢</div><div class="status'+(working?' working':'')+'">'+(working?'● 工作中'+(toolName?' · '+e(toolName):''):'◉ 待命中')+'</div></div>';
+}
+
+// ── WebSocket 直连（弃轮询）──────────────────────────────
+let ws=null, wsRetry=0, wsTimer=0;
+function wsConnect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const qs=new URLSearchParams(location.search);
+  const token=qs.get('token')||S.getItem('tianshu_token')||'';
+  ws=new WebSocket(proto+'://'+location.host+'/ws'+(token?('?token='+encodeURIComponent(token)):''));
+  ws.onopen=()=>{wsRetry=0};
+  ws.onmessage=ev=>{
+    const m=JSON.parse(ev.data);
+    switch(m.type){
+      case 'status':
+        document.getElementById('model').textContent='模型 '+m.models;
+        document.getElementById('skills').textContent='工具 '+m.skills;
+        break;
+      case 'join': renderMembers(m.members); break;
+      case 'chat':
+        streamEnd(); hideTyping(); reasonEnd(); reasonEl=null; reasonBuf='';
+        setAgentStatus(false);
+        addMsg(m.from==='天枢'?'bot':'user', m.from, m.content, m.id, m.time);
+        if(m.from==='天枢'&&m.tools) m.tools.forEach(t=>addToolRow(t.name!==undefined?t.name:t, t.ok!==undefined?t.ok:true));
+        break;
+      case 'typing':
+        setAgentStatus(true); showTyping(); reasonBuf=''; reasonEl=null;
+        break;
+      case 'reasoning': reasonDelta(m.content); break;
+      case 'chat_delta': streamDelta(m.content); break;
+      case 'tool_start': setAgentStatus(true, m.name); break;
+      case 'tool': addToolRow(m.name, m.ok); break;
+      case 'error': streamEnd(); hideTyping(); addMsg('bot','天枢','⚠️ '+m.content,'err'+Date.now()); break;
+    }
+  };
+  ws.onclose=()=>{
+    // 指数退避重连，1s 起步封顶 15s
+    wsRetry=Math.min(wsRetry+1,4);
+    wsTimer=setTimeout(wsConnect, Math.min(1000*2**(wsRetry-1),15000));
+  };
+}
+function renderMembers(members){
+  const ml=document.getElementById('members');
+  const list=(members||[]).filter(u=>u&&u!=='匿名');
+  const uniq=[...new Set(list)];
+  let html='<h3>在线 ('+(uniq.length+1)+')</h3>';
+  html+='<div class="member is-ai"><span class="dot"></span> 天枢 (AI)</div>';
+  uniq.forEach(u=>{ if(u!=='天枢') html+='<div class="member"><span class="dot"></span> '+e(u)+'</div>'; });
+  ml.innerHTML=html;
+}
+
+// ── 历史回放（仅首次加载，之后全走 WS）────────────────────
+async function loadHistory(){
   try{
-    const resp = await fetch('/chat/messages?since='+lastId);
-    const data = await resp.json();
+    const r=await fetch('/chat/messages?since=0');
+    const data=await r.json();
     if(data.users) window._chatUsers=data.users;
-    // 更新在线成员（增量，不清空已有）
-    const seen=new Set();
-    const ml=document.getElementById('members');
-    // 保留已有的成员元素，只增不删
-    let html='<h3>在线 ('+((data.users||[]).length+1)+')</h3>';
-    html+='<div class=member id=m-天枢><span class=dot></span> 天枢 (AI)</div>';
-    seen.add('天枢');
-    (data.users||[]).forEach(u=>{
-      if(!seen.has(u)){seen.add(u);
-        html+='<div class=member id=m-'+u.replace(/[^a-zA-Z0-9一-龥]/g,'')+'><span class=dot></span> '+e(u)+'</div>';
-      }
-    });
-    ml.innerHTML=html;
-    // 更新 Agent 面板
-    if(data.agents){
-      const al=document.getElementById('agent-list');
-      al.innerHTML=data.agents.map(a=>{
-        const cls=a.status==='working'?'working':a.status==='error'?'error':'idle';
-        const icon=a.status==='working'?'●':a.status==='error'?'✗':'◉';
-        return '<div class=agent-card><div class=name>'+a.name+'</div><div class="status '+cls+'">'+icon+' '+(a.status==='working'?'工作中':'待命中')+'</div><div style="color:#64748b;font-size:11px;margin-top:2px">'+a.tools+' tools</div></div>';
-      }).join('');
-    }
-    // 更新审计计数
-    if(data.agents&&data.agents[0]&&data.agents[0].audit_count>0){
-      document.getElementById('audit-count').textContent='('+data.agents[0].audit_count+' 条)';
-    }
+    stickBottom=true;
     for(const m of data.messages||[]){
-      if(m.id>lastId) lastId=m.id;
-      const cls = m.from==='天枢'?'bot':'user';
-      addMsg(cls, m.from, m.content, m.id, m.time);
-      // 仪表盘: 工具日志 + 审计
-      if(m.from==='天枢' && m.tools && m.tools.length){
-        m.tools.forEach(t=>addToolLog(t,true));
-      }
-      if(m.from==='天枢' && m.audit_id){
-        const al=document.getElementById('audit-log');
-        const d=document.createElement('div');d.className='audit-entry';
-        d.innerHTML='<span class=id>'+m.audit_id.slice(-6)+'</span> '+new Date(m.time*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'<br><span class=tool-name>'+(m.tools||[]).length+' tools</span>';
-        al.insertBefore(d,al.firstChild);
-        if(al.children.length>10)al.removeChild(al.lastChild);
-      }
+      addMsg(m.from==='天枢'?'bot':'user', m.from, m.content, m.id, m.time);
     }
-  }catch(e){}
+    chat.scrollTop=chat.scrollHeight;
+    if(data.token){S.setItem('tianshu_token',data.token)}   // 服务器可回传 token 供 WS 用
+  }catch(err){}
 }
-setInterval(poll, 1500);
+loadHistory();
+wsConnect();
 
+// ── 发送 ──────────────────────────────────────────────────
+async function send(){
+  const mi=document.getElementById('mi'), tx=mi.value.trim();
+  if(!tx)return;
+  if(ws&&ws.readyState===1){
+    const n=document.getElementById('ni').value.trim()||'匿名';
+    name=n; S.setItem('ts_name',name);
+    mi.value='';
+    ws.send(JSON.stringify({type:'chat',from:n,content:tx}));
+  }else{
+    // WS 断线降级：HTTP 发送
+    const n=document.getElementById('ni').value.trim()||'匿名';
+    name=n; S.setItem('ts_name',name);
+    mi.value='';
+    try{await fetch('/chat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sender:n,content:tx})});}catch(e){}
+  }
+}
+
+// ── 附件 ──────────────────────────────────────────────────
 async function uploadFile(){
   const fi=document.getElementById('fi'), file=fi.files[0];
   if(!file)return;
@@ -213,16 +377,12 @@ async function uploadFile(){
   try{
     const r=await fetch('/chat/upload',{method:'POST',body:fd});
     if(!r.ok){const d=await r.json();alert('上传失败: '+(d.detail||r.status))}
-    else{
-      // 广播上传消息到群聊
-      const data=await r.json();
-      msg('user',n,'📎 上传了文件: '+data.filename);
-    }
-    fi.value='';poll();
+    else{const data=await r.json();addMsg('user',n,'📎 上传了文件: '+data.filename,'f'+data.id)}
+    fi.value='';
   }catch(e){alert('上传失败: 网络错误')}
 }
 
-// @ 自动补全
+// ── @ 自动补全 ────────────────────────────────────────────
 let acIdx=-1,acList=[],acBase='';
 function onInput(){
   const mi=document.getElementById('mi'),ac=document.getElementById('ac');
@@ -235,59 +395,34 @@ function onInput(){
   }ac.style.display='none';acIdx=-1;
 }
 function renderAc(){
-  document.getElementById('ac').innerHTML=acList.map((u,i)=>'<div style="padding:5px 8px;cursor:pointer;font-size:13px;'+(i===acIdx?'background:#2563eb;border-radius:4px':'')+'" onmousedown="pickAc('+i+')">@'+u+'</div>').join('');
+  document.getElementById('ac').innerHTML=acList.map((u,i)=>'<div class="item'+(i===acIdx?' sel':'')+'" onmousedown="pickAc('+i+')">@'+e(u)+'</div>').join('');
 }
 function pickAc(i){
   const mi=document.getElementById('mi');mi.value=acBase+'@'+acList[i]+' ';document.getElementById('ac').style.display='none';mi.focus();
 }
-function onKey(e){
+function onKey(ev){
   const ac=document.getElementById('ac');if(ac.style.display==='none')return;
-  if(e.key==='ArrowDown'){e.preventDefault();acIdx=(acIdx+1)%acList.length;renderAc()}
-  else if(e.key==='ArrowUp'){e.preventDefault();acIdx=(acIdx-1+acList.length)%acList.length;renderAc()}
-  else if(e.key==='Enter'&&acIdx>=0){e.preventDefault();pickAc(acIdx)}
-  else if(e.key==='Escape'){ac.style.display='none';acIdx=-1}
+  if(ev.key==='ArrowDown'){ev.preventDefault();acIdx=(acIdx+1)%acList.length;renderAc()}
+  else if(ev.key==='ArrowUp'){ev.preventDefault();acIdx=(acIdx-1+acList.length)%acList.length;renderAc()}
+  else if(ev.key==='Enter'&&acIdx>=0){ev.preventDefault();pickAc(acIdx)}
+  else if(ev.key==='Escape'){ac.style.display='none';acIdx=-1}
 }
 
-async function send(){
-  const mi=document.getElementById('mi'), tx=mi.value.trim();
-  if(!tx)return;
-  const n=document.getElementById('ni').value.trim()||'匿名';
-  name=n; S.setItem('ts_name',name);
-  mi.value='';
-
-  try{
-    await fetch('/chat/send',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({sender:name,content:tx})
-    });
-  }catch(e){}
-  poll(); // 立刻刷新
-}
-
-fetch('/health').then(r=>r.json()).then(d=>{
-  document.getElementById('model').textContent='模型: '+d.models;
-  document.getElementById('skills').textContent='工具: '+d.skills;
-});
-// 定时刷新仪表盘
+// ── 仪表盘低频刷新（审计面板，5s 足够）────────────────────
 async function refreshDash(){
   try{
-    // 审计记录
     const ar=await fetch('/audit?limit=5');const ad=await ar.json();
     const al=document.getElementById('audit-log');
     if(ad.records&&ad.records.length){
       al.innerHTML=ad.records.map(r=>{
-        const id=r.decision_id||'?';const m=r.llm_model||'?';
+        const id=r.decision_id||'?';
         const tools=(r.input_data||[]).length||r.tool_count||0;
-        return '<div class=audit-entry><span class=id>'+id.slice(-6)+'</span> '+m+'<br><span class=tool-name>'+tools+' tools</span></div>';
+        return '<div class="audit-entry"><span class="id">'+id.slice(-6)+'</span> '+(r.llm_model||'')+' · '+tools+' tools</div>';
       }).join('');
     }
-    // Agent状态
-    document.getElementById('agent-list').innerHTML=
-      '<div class=agent-card><div class=name>天枢</div><div class="status '+(ad.records&&ad.records.length?'working':'idle')+'">'+(ad.records&&ad.records.length?'● 工作中':'◉ 待命中')+'</div></div>';
   }catch(e){}
 }
 setInterval(refreshDash,5000);refreshDash();
-poll();
 </script>
 </body>
 </html>
